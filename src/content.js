@@ -12,6 +12,13 @@
 
 'use strict';
 
+// Guard: manifest + ensureContentScript() can both inject this file.
+// The second injection must be a no-op to avoid re-declaring const identifiers.
+if (window.__livewatchContentLoaded) {
+  // Already running — nothing to do.
+} else {
+window.__livewatchContentLoaded = true;
+
 // ---------------------------------------------------------------------------
 // Constants (inlined — content scripts cannot import ES modules without bundler)
 // ---------------------------------------------------------------------------
@@ -601,3 +608,5 @@ function handleWsMessage(event) {
     // Silently swallow — must not crash the page.
   }
 }
+
+} // end guard: window.__livewatchContentLoaded
