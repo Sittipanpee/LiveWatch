@@ -270,6 +270,9 @@ btnTest.addEventListener('click', () => {
 // ── Boot ───────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  const v = chrome.runtime.getManifest().version;
+  document.getElementById('versionBadge').textContent = `v${v}`;
+
   fetchStatus();
   fetchStorage();
 

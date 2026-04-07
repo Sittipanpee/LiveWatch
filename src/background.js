@@ -20,6 +20,15 @@ import {
 import { finalizeSession } from './session_summary.js';
 import { getAuthToken, sheetsAppend, getOrCreateDriveFolder, uploadFrameToDrive } from './sheets.js';
 
+// ─── Logger (debug logs suppressed in production) ────────────────────────────
+
+const DEBUG = false;
+const log = {
+  info:  (...a) => { if (DEBUG) console.info(...a); },
+  warn:  (...a) => { if (DEBUG) console.warn(...a); },
+  error: (...a) => console.error(...a),
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // gen.pollinations.ai = new authenticated API (full model list, vision support)
@@ -69,7 +78,7 @@ async function saveState() {
   try {
     await chrome.storage.local.set({ extensionState: state });
   } catch (e) {
-    console.error('[LiveWatch] saveState failed:', e);
+    log.error('[LiveWatch] saveState failed:', e);
   }
 }
 
@@ -80,7 +89,7 @@ async function loadState() {
       state = { ...state, ...extensionState };
     }
   } catch (e) {
-    console.error('[LiveWatch] loadState failed:', e);
+    log.error('[LiveWatch] loadState failed:', e);
   }
 }
 
@@ -134,12 +143,12 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
             );
 
             if (!res.ok) {
-              console.error('[LiveWatch] uploadThumbnail Supabase failed:', await res.text());
+              log.error('[LiveWatch] uploadThumbnail Supabase failed:', await res.text());
               return null;
             }
             return `${supabaseUrl}/storage/v1/object/public/livewatch-frames/${storagePath}`;
           } catch (e) {
-            console.error('[LiveWatch] uploadThumbnail Supabase error:', e);
+            log.error('[LiveWatch] uploadThumbnail Supabase error:', e);
             return null;
           }
         })()
@@ -165,7 +174,7 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
             const result = await uploadFrameToDrive(base64Jpeg, filename, driveFolderId, token);
             return result?.webViewLink ?? null;
           } catch (e) {
-            console.error('[LiveWatch] uploadThumbnail Drive error:', e);
+            log.error('[LiveWatch] uploadThumbnail Drive error:', e);
             return null;
           }
         })()
@@ -182,7 +191,7 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
     // Prefer Supabase URL, fall back to Drive webViewLink
     return supabaseUrl_result ?? driveUrl ?? null;
   } catch (e) {
-    console.error('[LiveWatch] uploadThumbnail error:', e);
+    log.error('[LiveWatch] uploadThumbnail error:', e);
     return null;
   }
 }
@@ -211,7 +220,7 @@ async function supabaseInsert(table, row) {
     if (!res.ok) return { error: await res.text() };
     return { data: await res.json() };
   } catch (e) {
-    console.error(`[LiveWatch] supabaseInsert(${table}) error:`, e);
+    log.error(`[LiveWatch] supabaseInsert(${table}) error:`, e);
     return { error: String(e) };
   }
 }
@@ -238,7 +247,7 @@ async function supabaseUpdate(table, id, updates) {
     if (!res.ok) return { error: await res.text() };
     return { data: await res.json() };
   } catch (e) {
-    console.error(`[LiveWatch] supabaseUpdate(${table}) error:`, e);
+    log.error(`[LiveWatch] supabaseUpdate(${table}) error:`, e);
     return { error: String(e) };
   }
 }
@@ -266,7 +275,7 @@ async function supabaseSelect(table, params = {}) {
     if (!res.ok) return { error: await res.text() };
     return { data: await res.json() };
   } catch (e) {
-    console.error(`[LiveWatch] supabaseSelect(${table}) error:`, e);
+    log.error(`[LiveWatch] supabaseSelect(${table}) error:`, e);
     return { error: String(e) };
   }
 }
@@ -291,7 +300,7 @@ async function sheetsWrite(table, row) {
 
     await sheetsAppend(config.sheetsId, table, row, token);
   } catch (e) {
-    console.warn('[LiveWatch] sheetsWrite error:', e);
+    log.warn('[LiveWatch] sheetsWrite error:', e);
   }
 }
 
@@ -302,14 +311,14 @@ async function analyzeFrames(frames, meta) {
   try {
     const validFrames = frames.filter(Boolean);
     if (validFrames.length === 0) {
-      console.error('[LiveWatch] analyzeFrames: no valid frames');
+      log.error('[LiveWatch] analyzeFrames: no valid frames');
       return null;
     }
 
     const { pollinationsKey } = await chrome.storage.local.get('pollinationsKey');
 
     if (!pollinationsKey) {
-      console.error('[LiveWatch] analyzeFrames: Pollinations API key not set');
+      log.error('[LiveWatch] analyzeFrames: Pollinations API key not set');
       await chrome.storage.local.set({
         lastCaptureStatus: { step: 'error', message: 'กรุณาใส่ Pollinations API Key ใน Settings', at: now },
       });
@@ -361,7 +370,7 @@ Scoring rules:
       })),
     ];
 
-    console.info(`[LiveWatch] analyzeFrames: ${url} model=${model}, frames=${validFrames.length}`);
+    log.info(`[LiveWatch] analyzeFrames: ${url} model=${model}, frames=${validFrames.length}`);
 
     let res;
     try {
@@ -376,7 +385,7 @@ Scoring rules:
         }),
       });
     } catch (fetchErr) {
-      console.error('[LiveWatch] analyzeFrames: network error:', fetchErr?.message);
+      log.error('[LiveWatch] analyzeFrames: network error:', fetchErr?.message);
       await chrome.storage.local.set({
         lastCaptureStatus: { step: 'error', message: `Network error: ${fetchErr?.message}`, at: now },
       });
@@ -384,11 +393,11 @@ Scoring rules:
     }
 
     const rawText = await res.text();
-    console.info(`[LiveWatch] analyzeFrames: HTTP ${res.status}, len=${rawText.length}`);
-    console.info('[LiveWatch] analyzeFrames raw:', rawText.substring(0, 400));
+    log.info(`[LiveWatch] analyzeFrames: HTTP ${res.status}, len=${rawText.length}`);
+    log.info('[LiveWatch] analyzeFrames raw:', rawText.substring(0, 400));
 
     if (!res.ok) {
-      console.error('[LiveWatch] analyzeFrames HTTP error:', res.status, rawText.substring(0, 300));
+      log.error('[LiveWatch] analyzeFrames HTTP error:', res.status, rawText.substring(0, 300));
       await chrome.storage.local.set({
         lastCaptureStatus: { step: 'error', message: `API ${res.status}: ${rawText.substring(0, 100)}`, at: now },
       });
@@ -406,12 +415,12 @@ Scoring rules:
     }
 
     const text = data?.choices?.[0]?.message?.content ?? '';
-    console.info('[LiveWatch] analyzeFrames model content:', text);
+    log.info('[LiveWatch] analyzeFrames model content:', text);
 
     const stripped = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     const jsonMatch = stripped.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('[LiveWatch] analyzeFrames: no JSON in:', stripped.substring(0, 200));
+      log.error('[LiveWatch] analyzeFrames: no JSON in:', stripped.substring(0, 200));
       await chrome.storage.local.set({
         lastCaptureStatus: { step: 'error', message: `Model returned: ${stripped.substring(0, 100)}`, at: now },
       });
@@ -420,7 +429,7 @@ Scoring rules:
 
     try {
       const result = JSON.parse(jsonMatch[0]);
-      console.info('[LiveWatch] analyzeFrames OK:', result);
+      log.info('[LiveWatch] analyzeFrames OK:', result);
       return result;
     } catch (parseErr) {
       await chrome.storage.local.set({
@@ -429,7 +438,7 @@ Scoring rules:
       return null;
     }
   } catch (e) {
-    console.error('[LiveWatch] analyzeFrames unhandled error:', e);
+    log.error('[LiveWatch] analyzeFrames unhandled error:', e);
     return null;
   }
 }
@@ -444,7 +453,7 @@ async function lineCredentials() {
 async function sendLineMessage(text) {
   const creds = await lineCredentials();
   if (!creds) {
-    console.warn('[LiveWatch] LINE credentials not configured, skipping');
+    log.warn('[LiveWatch] LINE credentials not configured, skipping');
     return false;
   }
   const res = await fetch('https://api.line.me/v2/bot/message/push', {
@@ -456,7 +465,7 @@ async function sendLineMessage(text) {
     body: JSON.stringify({ to: creds.lineUserId, messages: [{ type: 'text', text }] }),
   });
   if (!res.ok) {
-    console.error('[LiveWatch] LINE push failed:', res.status, await res.text());
+    log.error('[LiveWatch] LINE push failed:', res.status, await res.text());
     return false;
   }
   return true;
@@ -520,7 +529,7 @@ async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
   });
 
   if (!res.ok) {
-    console.error('[LiveWatch] sendCaptureAlert LINE failed:', res.status, await res.text());
+    log.error('[LiveWatch] sendCaptureAlert LINE failed:', res.status, await res.text());
   }
 }
 
@@ -533,7 +542,7 @@ async function sendDailySummary() {
       'lineUserId',
     ]);
     if (!lineToken || !lineUserId) {
-      console.warn('[LiveWatch] sendDailySummary: LINE credentials not configured');
+      log.warn('[LiveWatch] sendDailySummary: LINE credentials not configured');
       return;
     }
 
@@ -544,12 +553,12 @@ async function sendDailySummary() {
     });
 
     if (logsErr) {
-      console.error('[LiveWatch] sendDailySummary: failed to fetch analysis_logs:', logsErr);
+      log.error('[LiveWatch] sendDailySummary: failed to fetch analysis_logs:', logsErr);
       return;
     }
 
     if (!logs || logs.length === 0) {
-      console.info('[LiveWatch] sendDailySummary: no logs for today, skipping');
+      log.info('[LiveWatch] sendDailySummary: no logs for today, skipping');
       return;
     }
 
@@ -596,7 +605,7 @@ async function sendDailySummary() {
     ].join('\n');
 
     const ok = await sendLineMessage(message);
-    if (ok) console.info('[LiveWatch] Daily LINE summary sent successfully');
+    if (ok) log.info('[LiveWatch] Daily LINE summary sent successfully');
 
     await supabaseInsert('daily_summaries', {
       summary_date: today,
@@ -610,7 +619,7 @@ async function sendDailySummary() {
       line_sent_at: new Date().toISOString(),
     });
   } catch (e) {
-    console.error('[LiveWatch] sendDailySummary error:', e);
+    log.error('[LiveWatch] sendDailySummary error:', e);
   }
 }
 
@@ -628,7 +637,7 @@ async function sendHourlyReport() {
     const hourly  = recentCaptures.filter(c => c.captured_at >= cutoff);
 
     if (hourly.length === 0) {
-      console.info('[LiveWatch] sendHourlyReport: no captures in last hour, skipping');
+      log.info('[LiveWatch] sendHourlyReport: no captures in last hour, skipping');
       return;
     }
 
@@ -694,12 +703,12 @@ async function sendHourlyReport() {
     });
 
     if (res.ok) {
-      console.info(`[LiveWatch] Hourly LINE report sent (${count} captures, ${imageUrls.length} images)`);
+      log.info(`[LiveWatch] Hourly LINE report sent (${count} captures, ${imageUrls.length} images)`);
     } else {
-      console.error('[LiveWatch] Hourly LINE report failed:', res.status, await res.text());
+      log.error('[LiveWatch] Hourly LINE report failed:', res.status, await res.text());
     }
   } catch (e) {
-    console.error('[LiveWatch] sendHourlyReport error:', e);
+    log.error('[LiveWatch] sendHourlyReport error:', e);
   }
 }
 
@@ -723,11 +732,11 @@ async function scheduleDailyAlarm() {
       delayInMinutes,
       periodInMinutes: 1440,
     });
-    console.info(
+    log.info(
       `[LiveWatch] Daily summary alarm scheduled in ${delayInMinutes} minutes`
     );
   } catch (e) {
-    console.error('[LiveWatch] scheduleDailyAlarm error:', e);
+    log.error('[LiveWatch] scheduleDailyAlarm error:', e);
   }
 }
 
@@ -738,7 +747,7 @@ async function startCaptureAlarm() {
       periodInMinutes: CAPTURE_INTERVAL_MINUTES,
     });
   } catch (e) {
-    console.error('[LiveWatch] startCaptureAlarm error:', e);
+    log.error('[LiveWatch] startCaptureAlarm error:', e);
   }
 }
 
@@ -749,9 +758,9 @@ async function scheduleHourlyAlarm() {
       delayInMinutes: HOURLY_REPORT_PERIOD,
       periodInMinutes: HOURLY_REPORT_PERIOD,
     });
-    console.info('[LiveWatch] Hourly report alarm scheduled (every 60 min)');
+    log.info('[LiveWatch] Hourly report alarm scheduled (every 60 min)');
   } catch (e) {
-    console.error('[LiveWatch] scheduleHourlyAlarm error:', e);
+    log.error('[LiveWatch] scheduleHourlyAlarm error:', e);
   }
 }
 
@@ -759,7 +768,7 @@ async function clearCaptureAlarm() {
   try {
     await chrome.alarms.clear(ALARM_CAPTURE);
   } catch (e) {
-    console.error('[LiveWatch] clearCaptureAlarm error:', e);
+    log.error('[LiveWatch] clearCaptureAlarm error:', e);
   }
 }
 
@@ -782,7 +791,7 @@ async function startSession(tabId) {
     const { data, error } = await supabaseInsert('sessions', sessionRow);
 
     if (error) {
-      console.error('[LiveWatch] startSession insert failed:', error);
+      log.error('[LiveWatch] startSession insert failed:', error);
       return null;
     }
 
@@ -791,12 +800,12 @@ async function startSession(tabId) {
 
     // Dual-write to Google Sheets (fire-and-forget)
     sheetsWrite('sessions', { ...sessionRow, id: sessionId }).catch((e) =>
-      console.warn('[LiveWatch] Sheets write failed:', e)
+      log.warn('[LiveWatch] Sheets write failed:', e)
     );
 
     return sessionId;
   } catch (e) {
-    console.error('[LiveWatch] startSession error:', e);
+    log.error('[LiveWatch] startSession error:', e);
     return null;
   }
 }
@@ -826,9 +835,9 @@ async function endSession(sessionId, startedAt) {
       id: sessionId,
       ended_at: endedAt,
       duration_mins: durationMins,
-    }).catch((e) => console.warn('[LiveWatch] Sheets write failed:', e));
+    }).catch((e) => log.warn('[LiveWatch] Sheets write failed:', e));
   } catch (e) {
-    console.error('[LiveWatch] endSession error:', e);
+    log.error('[LiveWatch] endSession error:', e);
   }
 }
 
@@ -849,9 +858,9 @@ async function ensureContentScript(tabId) {
       target: { tabId },
       files: ['src/content.js'],
     });
-    console.info('[LiveWatch] content.js injected programmatically into tab', tabId);
+    log.info('[LiveWatch] content.js injected programmatically into tab', tabId);
   } catch (e) {
-    console.warn('[LiveWatch] ensureContentScript failed:', e?.message);
+    log.warn('[LiveWatch] ensureContentScript failed:', e?.message);
   }
 }
 
@@ -862,7 +871,7 @@ async function setLiveTab(tabId) {
       return;
     }
 
-    console.info('[LiveWatch] setLiveTab:', tabId);
+    log.info('[LiveWatch] setLiveTab:', tabId);
 
     // Make sure content script is running before we try to send CAPTURE_BURST
     await ensureContentScript(tabId);
@@ -890,9 +899,9 @@ async function setLiveTab(tabId) {
     await scheduleStatsAlarm();
     await scheduleChatBatchAlarm();
 
-    console.info('[LiveWatch] Now monitoring tab', tabId, 'session', sessionId);
+    log.info('[LiveWatch] Now monitoring tab', tabId, 'session', sessionId);
   } catch (e) {
-    console.error('[LiveWatch] setLiveTab error:', e);
+    log.error('[LiveWatch] setLiveTab error:', e);
     state.status = STATUS.MONITORING;
     await saveState();
   }
@@ -900,7 +909,7 @@ async function setLiveTab(tabId) {
 
 async function goOffline() {
   try {
-    console.info('[LiveWatch] goOffline, ending session', state.sessionId);
+    log.info('[LiveWatch] goOffline, ending session', state.sessionId);
 
     await clearCaptureAlarm();
     await clearStatsAlarm();
@@ -931,7 +940,7 @@ async function goOffline() {
       'sessionSummary',
     ]);
   } catch (e) {
-    console.error('[LiveWatch] goOffline error:', e);
+    log.error('[LiveWatch] goOffline error:', e);
     // Force offline even on error
     state = {
       status: STATUS.OFFLINE,
@@ -956,7 +965,7 @@ async function scanTabs() {
       await goOffline();
     }
   } catch (e) {
-    console.error('[LiveWatch] scanTabs error:', e);
+    log.error('[LiveWatch] scanTabs error:', e);
   }
 }
 
@@ -967,7 +976,7 @@ async function triggerBurst() {
 
   // Don't interrupt an in-progress capture/analyze cycle
   if (state.status === STATUS.CAPTURING || state.status === STATUS.ANALYZING) {
-    console.warn('[LiveWatch] triggerBurst: already in progress, skipping');
+    log.warn('[LiveWatch] triggerBurst: already in progress, skipping');
     return;
   }
 
@@ -980,14 +989,14 @@ async function triggerBurst() {
       type: MSG.CAPTURE_BURST,
     });
   } catch (e) {
-    console.warn('[LiveWatch] triggerBurst: sendMessage failed, retrying with inject:', e?.message);
+    log.warn('[LiveWatch] triggerBurst: sendMessage failed, retrying with inject:', e?.message);
     // Content script not running — inject it and retry once
     await ensureContentScript(state.liveTabId);
     await new Promise(r => setTimeout(r, 500));
     try {
       response = await chrome.tabs.sendMessage(state.liveTabId, { type: MSG.CAPTURE_BURST });
     } catch (e2) {
-      console.error('[LiveWatch] triggerBurst: retry also failed:', e2?.message);
+      log.error('[LiveWatch] triggerBurst: retry also failed:', e2?.message);
       state.status = STATUS.MONITORING;
       await saveState();
       return;
@@ -995,7 +1004,7 @@ async function triggerBurst() {
   }
 
   if (!response || response.error || !response.frames?.length) {
-    console.warn('[LiveWatch] triggerBurst: invalid response from content:', response);
+    log.warn('[LiveWatch] triggerBurst: invalid response from content:', response);
     state.status = STATUS.MONITORING;
     await saveState();
     return;
@@ -1011,9 +1020,9 @@ async function triggerBurst() {
   state.status = STATUS.ANALYZING;
   await saveState();
 
-  console.info(`[LiveWatch] analyzeFrames: sending ${response.frames.length} frames to Pollinations...`);
+  log.info(`[LiveWatch] analyzeFrames: sending ${response.frames.length} frames to Pollinations...`);
   const scores = await analyzeFrames(response.frames, response.meta);
-  console.info('[LiveWatch] analyzeFrames result:', scores);
+  log.info('[LiveWatch] analyzeFrames result:', scores);
 
   if (!scores) {
     await chrome.storage.local.set({
@@ -1041,7 +1050,7 @@ async function triggerBurst() {
 
     // Send LINE alert for every capture (with image if Supabase is configured)
     sendCaptureAlert(scores, capturedAt, thumbnailUrl).catch(e =>
-      console.error('[LiveWatch] sendCaptureAlert error:', e)
+      log.error('[LiveWatch] sendCaptureAlert error:', e)
     );
 
     // Append to recentCaptures ring buffer (used for hourly report)
@@ -1094,15 +1103,15 @@ async function triggerBurst() {
     const { error } = await supabaseInsert('analysis_logs', analysisRow);
 
     if (error && error !== 'not_configured') {
-      console.error('[LiveWatch] triggerBurst: failed to insert analysis_log:', error);
+      log.error('[LiveWatch] triggerBurst: failed to insert analysis_log:', error);
     }
 
     // Dual-write to Google Sheets (fire-and-forget)
     sheetsWrite('analysis_logs', analysisRow).catch((e) =>
-      console.warn('[LiveWatch] Sheets write failed:', e)
+      log.warn('[LiveWatch] Sheets write failed:', e)
     );
   } else {
-    console.warn('[LiveWatch] triggerBurst: analyzeFrames returned null, skipping insert');
+    log.warn('[LiveWatch] triggerBurst: analyzeFrames returned null, skipping insert');
   }
 
   state.status = STATUS.MONITORING;
@@ -1147,7 +1156,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
     }
   } catch (e) {
-    console.error('[LiveWatch] alarms.onAlarm unhandled error:', alarm.name, e);
+    log.error('[LiveWatch] alarms.onAlarm unhandled error:', alarm.name, e);
   }
 });
 
@@ -1161,7 +1170,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = sender.tab?.id ?? null;
       if (tabId !== null) {
         setLiveTab(tabId).catch((e) =>
-          console.error('[LiveWatch] LIVE_STARTED setLiveTab error:', e)
+          log.error('[LiveWatch] LIVE_STARTED setLiveTab error:', e)
         );
       }
       sendResponse({ ok: true });
@@ -1180,11 +1189,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             await finalizeSession(s.sessionId, cfg);
           }
         } catch (e) {
-          console.error('[LiveWatch] LIVE_ENDED finalizeSession error:', e);
+          log.error('[LiveWatch] LIVE_ENDED finalizeSession error:', e);
         }
         await goOffline();
       })().catch((e) =>
-        console.error('[LiveWatch] LIVE_ENDED error:', e)
+        log.error('[LiveWatch] LIVE_ENDED error:', e)
       );
       sendResponse({ ok: true });
       return false;
@@ -1194,7 +1203,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.lastHeartbeat = Date.now();
       if (!msg.alive) {
         goOffline().catch((e) =>
-          console.error('[LiveWatch] HEARTBEAT goOffline error:', e)
+          log.error('[LiveWatch] HEARTBEAT goOffline error:', e)
         );
       }
       sendResponse({ ok: true });
@@ -1218,7 +1227,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const s = { ...state };
       if (s.sessionId) {
         appendChatMessage(msg.msg, s.sessionId).catch((e) =>
-          console.error('[LiveWatch] CHAT_MSG appendChatMessage error:', e)
+          log.error('[LiveWatch] CHAT_MSG appendChatMessage error:', e)
         );
       }
       sendResponse({ ok: true });
@@ -1231,7 +1240,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return false;
     }
   } catch (e) {
-    console.error('[LiveWatch] onMessage unhandled error:', msg.type, e);
+    log.error('[LiveWatch] onMessage unhandled error:', msg.type, e);
     sendResponse({ error: String(e) });
   }
 
@@ -1251,17 +1260,17 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
       // New or reloaded live tab
       if (state.liveTabId !== tabId || state.status === STATUS.OFFLINE) {
         setLiveTab(tabId).catch((e) =>
-          console.error('[LiveWatch] onUpdated setLiveTab error:', e)
+          log.error('[LiveWatch] onUpdated setLiveTab error:', e)
         );
       }
     } else if (tabId === state.liveTabId) {
       // Live tab navigated away from live page
       goOffline().catch((e) =>
-        console.error('[LiveWatch] onUpdated goOffline error:', e)
+        log.error('[LiveWatch] onUpdated goOffline error:', e)
       );
     }
   } catch (e) {
-    console.error('[LiveWatch] tabs.onUpdated error:', e);
+    log.error('[LiveWatch] tabs.onUpdated error:', e);
   }
 });
 
@@ -1269,11 +1278,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   try {
     if (tabId === state.liveTabId) {
       goOffline().catch((e) =>
-        console.error('[LiveWatch] onRemoved goOffline error:', e)
+        log.error('[LiveWatch] onRemoved goOffline error:', e)
       );
     }
   } catch (e) {
-    console.error('[LiveWatch] tabs.onRemoved error:', e);
+    log.error('[LiveWatch] tabs.onRemoved error:', e);
   }
 });
 
@@ -1308,19 +1317,19 @@ async function initialize() {
     // Scan for existing live tabs
     await scanTabs();
   } catch (e) {
-    console.error('[LiveWatch] initialize error:', e);
+    log.error('[LiveWatch] initialize error:', e);
   }
 }
 
 chrome.runtime.onStartup.addListener(() => {
-  initialize().catch((e) => console.error('[LiveWatch] onStartup error:', e));
+  initialize().catch((e) => log.error('[LiveWatch] onStartup error:', e));
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  initialize().catch((e) => console.error('[LiveWatch] onInstalled error:', e));
+  initialize().catch((e) => log.error('[LiveWatch] onInstalled error:', e));
 });
 
 // Run initialize immediately in case the service worker woke up without a startup/install event
 initialize().catch((e) =>
-  console.error('[LiveWatch] top-level initialize error:', e)
+  log.error('[LiveWatch] top-level initialize error:', e)
 );
