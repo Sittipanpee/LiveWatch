@@ -128,7 +128,7 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
             const bytes  = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-            const res = await fetch(
+            const uploadRes = await fetch(
               `${supabaseUrl}/storage/v1/object/livewatch-frames/${storagePath}`,
               {
                 method: 'POST',
@@ -142,10 +142,50 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
               }
             );
 
-            if (!res.ok) {
-              log.error('[LiveWatch] uploadThumbnail Supabase failed:', await res.text());
-              return null;
+            // If bucket doesn't exist, create it (public) then retry once
+            if (!uploadRes.ok) {
+              const errText = await uploadRes.text();
+              const bucketMissing = uploadRes.status === 404 ||
+                errText.includes('Bucket not found') ||
+                errText.includes('bucket') ||
+                errText.includes('NoSuchBucket');
+
+              if (bucketMissing) {
+                log.warn('[LiveWatch] Storage bucket missing — creating livewatch-frames...');
+                await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: supabaseKey,
+                    Authorization: `Bearer ${supabaseKey}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ id: 'livewatch-frames', name: 'livewatch-frames', public: true }),
+                });
+
+                // Retry upload after bucket creation
+                const retry = await fetch(
+                  `${supabaseUrl}/storage/v1/object/livewatch-frames/${storagePath}`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      apikey: supabaseKey,
+                      Authorization: `Bearer ${supabaseKey}`,
+                      'Content-Type': 'image/jpeg',
+                      'x-upsert': 'true',
+                    },
+                    body: bytes,
+                  }
+                );
+                if (!retry.ok) {
+                  log.error('[LiveWatch] uploadThumbnail retry failed:', await retry.text());
+                  return null;
+                }
+              } else {
+                log.error('[LiveWatch] uploadThumbnail Supabase failed:', errText);
+                return null;
+              }
             }
+
             return `${supabaseUrl}/storage/v1/object/public/livewatch-frames/${storagePath}`;
           } catch (e) {
             log.error('[LiveWatch] uploadThumbnail Supabase error:', e);

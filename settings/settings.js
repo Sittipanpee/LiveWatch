@@ -31,6 +31,7 @@ const saveBtn              = document.getElementById('saveBtn');
 const testLineBtn          = document.getElementById('testLineBtn');
 const testSupabaseBtn      = document.getElementById('testSupabaseBtn');
 const testPollinationsBtn  = document.getElementById('testPollinationsBtn');
+const setupStorageBtn      = document.getElementById('setupStorageBtn');
 
 const lineTestResult         = document.getElementById('lineTestResult');
 const supabaseTestResult     = document.getElementById('supabaseTestResult');
@@ -248,6 +249,63 @@ async function testPollinations() {
     showTestResult(pollinationsTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
   } finally {
     testPollinationsBtn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Setup Supabase Storage bucket
+// ---------------------------------------------------------------------------
+
+async function setupStorageBucket() {
+  const rawUrl = supabaseUrlEl.value.trim();
+  const key    = supabaseKeyEl.value.trim();
+
+  if (!rawUrl || !key) {
+    showTestResult(supabaseTestResult, 'error', 'กรุณากรอก URL และ Key ก่อน');
+    return;
+  }
+
+  const baseUrl = normaliseUrl(rawUrl);
+  setupStorageBtn.disabled = true;
+  clearTestResult(supabaseTestResult);
+
+  try {
+    // Try to create the bucket (public: true so LINE can fetch images)
+    const res = await fetch(`${baseUrl}/storage/v1/bucket`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: 'livewatch-frames', name: 'livewatch-frames', public: true }),
+    });
+
+    if (res.ok) {
+      showTestResult(supabaseTestResult, 'success', 'สร้าง Storage Bucket สำเร็จ — รูปภาพจะถูกส่งใน LINE แล้ว');
+    } else {
+      const text = await res.text();
+      // 409 = already exists, which is fine
+      if (res.status === 409 || text.includes('already exists') || text.includes('duplicate')) {
+        // Bucket exists — make sure it's public by updating it
+        await fetch(`${baseUrl}/storage/v1/bucket/livewatch-frames`, {
+          method: 'PUT',
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ public: true }),
+        });
+        showTestResult(supabaseTestResult, 'success', 'Storage Bucket มีอยู่แล้ว และตั้งค่า Public แล้ว ✓');
+      } else {
+        showTestResult(supabaseTestResult, 'error', `สร้างไม่สำเร็จ (${res.status}): ${text.slice(0, 80)}`);
+      }
+    }
+  } catch (err) {
+    showTestResult(supabaseTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
+  } finally {
+    setupStorageBtn.disabled = false;
   }
 }
 
@@ -747,6 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
   testPollinationsBtn.addEventListener('click', testPollinations);
   testLineBtn.addEventListener('click', testLine);
   testSupabaseBtn.addEventListener('click', testSupabase);
+  setupStorageBtn.addEventListener('click', setupStorageBucket);
 
   btnSheetsConnect.addEventListener('click', handleSheetsConnect);
   btnSheetsDisconnect.addEventListener('click', handleSheetsDisconnect);
