@@ -1471,6 +1471,14 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details?.reason === 'update') {
     chrome.storage.local.remove(['googleOAuthToken', 'driveFolderId']).catch(() => {});
   }
+  // On first install, open the consent/onboarding page.
+  if (details?.reason === 'install') {
+    try {
+      chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/welcome.html') });
+    } catch (e) {
+      log.error('[LiveWatch] open onboarding error:', e);
+    }
+  }
   initialize().catch((e) => log.error('[LiveWatch] onInstalled error:', e));
 });
 

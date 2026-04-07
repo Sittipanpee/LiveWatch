@@ -1,4 +1,19 @@
 /**
+ * injected.js — Runs in MAIN world to read the page's own WebSocket
+ * for real-time stats and chat that the seller legitimately owns.
+ *
+ * Scope: reads only data visible on the seller's own dashboard.
+ * Network: this file makes no network requests. All data is relayed
+ * to background.js via postMessage → chrome.runtime.sendMessage.
+ *
+ * Consent: user explicitly consents to monitoring on first install
+ * via onboarding/welcome.html.
+ *
+ * Justification for MAIN world: the WebSocket handle lives on the page's
+ * own `window` object and is not accessible from an isolated content script.
+ */
+
+/**
  * injected.js — LiveWatch WebSocket interceptor
  *
  * Runs in the page's MAIN world (not extension context).

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ยินดีต้อนรับสู่ LiveWatch</title>
+  <link rel="stylesheet" href="welcome.css" />
+</head>
+<body>
+  <main class="card">
+    <header>
+      <div class="brand-bar"></div>
+      <h1>LiveWatch</h1>
+      <p class="tagline">ผู้ช่วย AI สำหรับผู้ขายไลฟ์สด</p>
+    </header>
+
+    <section class="intro">
+      <p class="th">LiveWatch ช่วยคุณมอนิเตอร์ไลฟ์ของคุณเองด้วยการวิเคราะห์ด้วย AI และส่งการแจ้งเตือนผ่าน LINE แบบเรียลไทม์</p>
+      <p class="en">LiveWatch helps you monitor your own live streams with AI analysis and LINE alerts.</p>
+    </section>
+
+    <section>
+      <h2>สิ่งที่ Extension ทำ / What this extension does</h2>
+      <ul>
+        <li>จับภาพจากไลฟ์ของคุณทุก 6–15 นาที (Capture frames from your own live every 6–15 min)</li>
+        <li>วิเคราะห์พฤติกรรมผู้นำเสนอด้วย AI (AI-analyze presenter behavior)</li>
+        <li>ส่งการแจ้งเตือนผ่าน LINE เมื่อพบปัญหา (Send LINE alerts when issues are detected)</li>
+        <li>เก็บประวัติและสรุปประจำวัน (Store history and daily summaries)</li>
+        <li>ข้อมูลทั้งหมดส่งไปยัง backend ที่คุณตั้งค่าเองเท่านั้น (All data goes only to the backend you configure)</li>
+      </ul>
+    </section>
+
+    <section class="consent">
+      <label class="consent-label">
+        <input type="checkbox" id="consentCheck" />
+        <span>ฉันยืนยันว่าเป็นเจ้าของบัญชีของไลฟ์ที่จะถูกมอนิเตอร์ และเข้าใจว่าฉันต้องปฏิบัติตามข้อตกลงของแพลตฟอร์มที่ใช้งาน / I confirm I am the account owner of any live streams I monitor and I am responsible for complying with the Terms of Service of the platform I use.</span>
+      </label>
+    </section>
+
+    <div class="actions">
+      <button id="continueBtn" disabled>ดำเนินการต่อ / Continue</button>
+    </div>
+
+    <footer>
+      <a href="https://livewatch-psi.vercel.app/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+      <span>·</span>
+      <a href="https://livewatch-psi.vercel.app/terms" target="_blank" rel="noopener">Terms of Service</a>
+    </footer>
+  </main>
+
+  <script src="welcome.js"></script>
+</body>
+</html>

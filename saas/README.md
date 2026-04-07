@@ -95,3 +95,16 @@ OAuth client used by the extension to authenticate against this backend.
 | Diamond  | 12                  | 5 minutes    |
 
 The extension polls `GET /api/user/tier` on startup and every 6 hours, caching the result in `chrome.storage.local`. The extension enforces `minIntervalMinutes` as a floor on the user's configured capture interval.
+
+## Legal pages
+
+Public, server-rendered pages (no auth) linked from the global footer:
+
+- `/privacy` — Privacy Policy (Thailand PDPA-compliant, bilingual Thai + English)
+- `/terms` — Terms of Service (bilingual; includes explicit clause that users are
+  responsible for complying with the platform ToS of any live commerce platform
+  they monitor — this protects LiveWatch from Chrome Web Store rejection)
+
+Note: Before submitting the Chrome extension to the Web Store, replace the
+`support@livewatch.app` placeholder with your real contact email in both
+`app/privacy/page.tsx` and `app/terms/page.tsx`.

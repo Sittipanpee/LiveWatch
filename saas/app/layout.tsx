@@ -24,6 +24,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         }}
       >
         {children}
+        <footer
+          style={{
+            marginTop: 64,
+            padding: '24px',
+            borderTop: '1px solid #e5e5e5',
+            textAlign: 'center',
+            fontSize: 13,
+            color: '#666',
+          }}
+        >
+          <a href="/" style={{ color: '#666', margin: '0 12px' }}>
+            Home
+          </a>
+          <a href="/privacy" style={{ color: '#666', margin: '0 12px' }}>
+            Privacy Policy
+          </a>
+          <a href="/terms" style={{ color: '#666', margin: '0 12px' }}>
+            Terms of Service
+          </a>
+        </footer>
       </body>
     </html>
   )
