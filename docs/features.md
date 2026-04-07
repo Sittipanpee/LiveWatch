@@ -6,13 +6,15 @@
 - [x] `chrome.alarms` trigger ทุก 8 นาที
 - [x] Auto-detect live tab on Chrome start (`runtime.onStartup`, `tabs.onUpdated`)
 - [x] ส่ง 3 frames ไป Pollinations API (gemini-flash-lite-3.1) วิเคราะห์:
-  - phone_detected
-  - eye_contact_score (0-100)
-  - smile_score (0-100)
-  - product_presenting
-  - presenter_visible
-  - activity_summary
+  - phone_detected + phone_likelihood (0-100)
+  - eye_contact_score (0-100) + confidence
+  - smile_score (0-100) + confidence
+  - product_presenting + confidence
+  - presenter_visible + face_visible + head_pose + eyes_open
+  - observed_details + activity_summary (ภาษาไทย, CoT)
   - alert_required + alert_reason
+- [x] Prompt บังคับ chain-of-thought + กฎ post-processing ฝั่ง JS
+  (ก้มหน้า/ตาปิด → eye_contact ≤15, looking_down → phone_likelihood ≥60)
 - [x] LINE Messaging API push notification เมื่อ alert_required = true
 - [x] Popup ON/OFF toggle + status display
 - [x] Settings page: LINE token, LINE user ID, capture interval

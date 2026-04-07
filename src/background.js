@@ -372,35 +372,50 @@ async function analyzeFrames(frames, meta) {
       'Authorization': `Bearer ${pollinationsKey}`,
     };
 
-    const prompt = `You are a JSON-only API analyzing a TikTok Live selling stream.
-You are given ${validFrames.length} frames captured 5 seconds apart (frame 1 → frame 2 → frame 3).
-Use ALL frames together to understand the full context of what is happening.
+    const prompt = `คุณคือผู้ตรวจสอบไลฟ์ขายของบน TikTok Shop ทำหน้าที่เป็น JSON-only API
+คุณได้รับ ${validFrames.length} เฟรมที่ถ่ายห่างกัน 5 วินาที (เฟรม 1 → 2 → 3) ดูทุกเฟรมรวมกัน
 
-Respond with ONLY this JSON object — no markdown, no extra text:
+ขั้นตอนการคิด (ทำในใจก่อนตอบ):
+1. ดูว่ามีคนในเฟรมจริงหรือไม่ ใบหน้าหันไปทิศไหน ตาเปิดหรือปิด
+2. คนกำลังก้มหน้าหรือเงยหน้า? ถ้าก้มนิ่ง ๆ ในไลฟ์ขายของ มีโอกาสสูงว่ากำลังดูมือถือ (แม้จะมองไม่เห็นเครื่องตรง ๆ)
+3. มือทั้งสองข้างอยู่ตรงไหน? ถืออะไรอยู่? เห็นสินค้าจริงในมือหรือแค่อยู่บนโต๊ะ?
+4. สีหน้าและปากบ่งบอกว่ากำลังพูดอยู่ไหม หรือเงียบ/หาว/หน้าตาย
+5. ให้คะแนน "ตามที่เห็นจริง" ห้ามเดาเป็นค่ากลาง ๆ ถ้าไม่แน่ใจให้คะแนนต่ำและใส่ confidence ต่ำ
+
+ตอบกลับเป็น JSON object นี้เท่านั้น (ห้ามมี markdown, ห้ามมีข้อความอื่น). ทุก field ต้องตอบจากการสังเกตจริง ห้ามลอกค่าตัวอย่าง:
 {
-  "presenter_visible": true,       // มีคนอยู่ในเฟรมไหม
-  "eye_contact_score": 75,         // มองกล้อง 0-100
-  "smile_score": 80,               // ยิ้มแย้ม 0-100 (ดูรวมทั้งสีหน้า ไม่ใช่แค่ปาก — ถ้าพูดแอคทีฟก็ถือว่า engage)
-  "energy_level": 70,              // พลังงาน/ความกระตือรือร้น 0-100
-  "engagement_score": 75,          // ความ engage กับ live โดยรวม (รวม eye contact + พูดแอคทีฟ + มองกล้อง + อ่าน comment)
-  "distracted": false,             // หันไปคุยนอกกล้อง หรือเงียบนิ่งนานผิดปกติ
-  "phone_detected": false,         // ถือมือถือในเฟรม
-  "multiple_people": false,        // มีคนอื่นโผล่โดยไม่ตั้งใจ
-  "product_presenting": true,      // กำลังแสดง/ถือสินค้า
-  "demo_in_progress": false,       // กำลัง demo วิธีใช้สินค้า
-  "lighting_quality": 85,          // แสง 0-100
-  "background_clean": true,        // พื้นหลังเรียบร้อย
-  "activity_summary": "Presenter actively talking and reading comments, holding product",
-  "alert_flag": false              // true ถ้ามีปัญหา
+  "observed_details": "",          // บรรยายเป็นภาษาไทยสั้น ๆ ว่าเห็นอะไรในเฟรม (ท่าทาง ใบหน้า มือ สินค้า) — ต้องกรอกจริง ห้ามว่าง
+  "presenter_visible": false,      // เห็นคนชัดเจนในเฟรมไหม
+  "presenter_visible_confidence": 0,  // 0-100 มั่นใจแค่ไหน
+  "face_visible": false,           // เห็นหน้าชัดไหม (ไม่ใช่หลังศีรษะ/ก้มจนไม่เห็นหน้า)
+  "head_pose": "unknown",          // "facing_camera" | "looking_down" | "looking_away" | "unknown"
+  "eyes_open": true,               // ตาเปิดอยู่ไหม
+  "eye_contact_score": 0,          // 0-100 มองกล้องตรง ๆ แค่ไหน (ก้มหน้า/ตาปิด = ≤15)
+  "eye_contact_confidence": 0,
+  "smile_score": 0,                // 0-100 รวมสีหน้า+การพูด ไม่ใช่แค่มุมปาก
+  "smile_confidence": 0,
+  "energy_level": 0,               // 0-100 ขยับ/แอคทีฟ (นั่งนิ่ง/ก้มหน้า = ≤20)
+  "engagement_score": 0,           // 0-100 ภาพรวมการ engage live
+  "phone_likelihood": 0,           // 0-100 น่าจะกำลังใช้มือถือไหม (รวมเคสมองไม่เห็นเครื่องแต่ก้มหน้านิ่ง)
+  "phone_detected": false,         // เห็นมือถือชัด ๆ ในเฟรมไหม
+  "phone_confidence": 0,
+  "product_presenting": false,     // กำลังถือ/ชี้/โชว์สินค้าอยู่จริงไหม (แค่มีสินค้าวางอยู่ ≠ กำลังเสนอ)
+  "product_confidence": 0,
+  "demo_in_progress": false,
+  "distracted": false,             // ไม่สนใจกล้อง/ก้มหน้านาน/หันไปคุยนอกกล้อง
+  "multiple_people": false,
+  "lighting_quality": 0,           // 0-100
+  "background_clean": false,
+  "activity_summary": ""           // สรุปสั้น ๆ เป็นภาษาไทย 1 ประโยค บรรยายสิ่งที่เห็นจริง ห้ามเขียนภาษาอังกฤษ ห้ามเดา
 }
 
-Scoring rules:
-- eye_contact_score: averaged across all frames. Reading comments = ~40, looking away = 10, direct camera gaze = 90+
-- smile_score: score the overall positive facial expression and energy, NOT just mouth shape. Active talking with expressive face = 60+, genuinely smiling = 80+, flat/bored = 20
-- engagement_score: holistic score — is this presenter actively working the live? Talking, gesturing, reacting to comments all count
-- energy_level: 0=sleepy/still, 100=very animated, moving, gesturing enthusiastically
-- distracted: true only if clearly ignoring the live audience for extended time
-- alert_flag: true if ANY: phone_detected in 2+ frames, eye_contact_score<20, energy_level<15, distracted=true`;
+กฎสำคัญ (ต้องบังคับใช้):
+- ถ้า face_visible=false หรือ eyes_open=false → eye_contact_score ≤ 15, smile_score ≤ 20
+- ถ้า head_pose="looking_down" ในเฟรมส่วนใหญ่ → eye_contact_score ≤ 20, energy_level ≤ 30, phone_likelihood ≥ 60
+- ถ้าก้มหน้านิ่ง > 50% ของเฟรม → distracted=true และ phone_likelihood ≥ 60
+- product_presenting=true เฉพาะกรณีที่ "มือกำลังถือ/ชี้สินค้า" หรือ "กำลังโชว์สินค้าให้กล้อง" — สินค้าวางอยู่บนโต๊ะเฉย ๆ ไม่นับ
+- ห้ามให้คะแนน 60-80 เป็นค่ากลาง ๆ โดยไม่มีหลักฐานในภาพ
+- activity_summary และ observed_details ต้องเป็นภาษาไทยเท่านั้น`;
 
     const content = [
       { type: 'text', text: prompt },
@@ -469,6 +484,44 @@ Scoring rules:
 
     try {
       const result = JSON.parse(jsonMatch[0]);
+
+      // Enforce rules in JS so we don't trust the model blindly
+      const clamp = (n) => Math.min(100, Math.max(0, Number(n) || 0));
+      result.eye_contact_score = clamp(result.eye_contact_score);
+      result.smile_score       = clamp(result.smile_score);
+      result.energy_level      = clamp(result.energy_level);
+      result.engagement_score  = clamp(result.engagement_score);
+      result.lighting_quality  = clamp(result.lighting_quality);
+      result.phone_likelihood  = clamp(result.phone_likelihood);
+
+      const lookingDown = result.head_pose === 'looking_down';
+      const faceHidden  = result.face_visible === false || result.eyes_open === false;
+
+      if (faceHidden) {
+        result.eye_contact_score = Math.min(result.eye_contact_score, 15);
+        result.smile_score       = Math.min(result.smile_score, 20);
+      }
+      if (lookingDown) {
+        result.eye_contact_score = Math.min(result.eye_contact_score, 20);
+        result.energy_level      = Math.min(result.energy_level, 30);
+        result.phone_likelihood  = Math.max(result.phone_likelihood, 60);
+        result.distracted        = true;
+      }
+
+      // phone_detected = either model saw it OR likelihood is high
+      if (result.phone_likelihood >= 60) {
+        result.phone_detected = true;
+      }
+
+      // Re-derive alert_flag from rules
+      result.alert_flag = Boolean(
+        result.phone_detected ||
+        result.phone_likelihood >= 60 ||
+        result.eye_contact_score < 20 ||
+        result.energy_level < 15 ||
+        result.distracted
+      );
+
       log.info('[LiveWatch] analyzeFrames OK:', result);
       return result;
     } catch (parseErr) {
@@ -521,18 +574,34 @@ async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
     return '█'.repeat(filled) + '░'.repeat(5 - filled) + ` ${score}`;
   };
 
+  const conf = (c) => {
+    const v = Number(c);
+    if (!Number.isFinite(v) || v <= 0) return '';
+    return ` (มั่นใจ ${Math.round(v)}%)`;
+  };
+
+  const phoneLikelihood = Number(scores.phone_likelihood) || 0;
+  const phoneLine =
+    scores.phone_detected
+      ? `📱 ⚠️ น่าจะใช้มือถือ! (โอกาส ${phoneLikelihood}%)`
+      : phoneLikelihood >= 30
+        ? `📱 สงสัยใช้มือถือ (โอกาส ${phoneLikelihood}%)`
+        : `📱 ไม่ถือมือถือ`;
+
   const lines = [
     scores.alert_flag ? `⚠️ แจ้งเตือน!` : `✅ ปกติ`,
     `📸 ผลวิเคราะห์ไลฟ์ (${timeStr} น.)`,
     ``,
-    `😊 ยิ้มแย้ม    ${bar(scores.smile_score        ?? 0)}`,
-    `👁 มองกล้อง   ${bar(scores.eye_contact_score   ?? 0)}`,
-    `⚡ พลังงาน    ${bar(scores.energy_level         ?? 0)}`,
-    `🎯 Engage     ${bar(scores.engagement_score     ?? 0)}`,
-    `💡 แสง        ${bar(scores.lighting_quality     ?? 0)}`,
+    `😊 ยิ้มแย้ม    ${bar(scores.smile_score      ?? 0)}${conf(scores.smile_confidence)}`,
+    `👁 มองกล้อง   ${bar(scores.eye_contact_score ?? 0)}${conf(scores.eye_contact_confidence)}`,
+    `⚡ พลังงาน    ${bar(scores.energy_level       ?? 0)}`,
+    `🎯 Engage     ${bar(scores.engagement_score   ?? 0)}`,
+    `💡 แสง        ${bar(scores.lighting_quality   ?? 0)}`,
     ``,
-    scores.phone_detected     ? `📱 ⚠️ ถือมือถือ!`    : `📱 ไม่ถือมือถือ`,
-    scores.product_presenting ? `📦 กำลังเสนอสินค้า`  : `📦 ยังไม่เสนอสินค้า`,
+    phoneLine,
+    scores.product_presenting
+      ? `📦 กำลังเสนอสินค้า${conf(scores.product_confidence)}`
+      : `📦 ยังไม่เสนอสินค้า`,
     scores.demo_in_progress   ? `🎬 กำลัง demo สินค้า` : null,
     scores.distracted         ? `😶 ⚠️ ไม่ engage`      : null,
     scores.multiple_people    ? `👥 มีคนอื่นในเฟรม`    : null,
