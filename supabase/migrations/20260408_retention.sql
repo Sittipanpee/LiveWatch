@@ -1,0 +1,50 @@
+-- LiveWatch SaaS: frame retention.
+--
+-- GOAL: Delete captured frames from Supabase Storage bucket `livewatch-frames`
+-- after 60 days to keep storage costs bounded.
+--
+-- IMPORTANT CAVEATS — READ BEFORE MODIFYING
+-- ==========================================
+--
+-- 1. `pg_cron` is available only on the Supabase Pro tier and higher, and must
+--    be enabled explicitly via Dashboard → Database → Extensions → pg_cron.
+--
+-- 2. DO NOT do this:
+--        delete from storage.objects
+--         where bucket_id = 'livewatch-frames'
+--           and created_at < now() - interval '60 days';
+--    Raw deletes against `storage.objects` remove the catalog rows but leave
+--    the underlying S3 bytes orphaned. You MUST call the Storage API (or
+--    `storage.delete_object`) so the S3 object is removed too.
+--
+-- 3. The preferred approach is a Supabase Edge Function that uses the Storage
+--    client SDK and is scheduled from the Dashboard. See:
+--        supabase/functions/cleanup-frames/index.ts
+--    Deploy with:  supabase functions deploy cleanup-frames
+--    Schedule from Dashboard → Edge Functions → cleanup-frames → Schedules.
+--
+-- 4. If you really want pg_cron, have it HTTP-POST to the Edge Function rather
+--    than try to reach into storage from SQL. Example (commented):
+--
+--    create extension if not exists pg_cron;
+--    create extension if not exists pg_net;
+--
+--    -- Run nightly at 03:00 UTC.
+--    -- select cron.schedule(
+--    --   'livewatch-frame-cleanup',
+--    --   '0 3 * * *',
+--    --   $$
+--    --     select net.http_post(
+--    --       url      := 'https://<project-ref>.supabase.co/functions/v1/cleanup-frames',
+--    --       headers  := jsonb_build_object(
+--    --                     'Authorization', 'Bearer <service-role-key>',
+--    --                     'Content-Type',  'application/json'
+--    --                   ),
+--    --       body     := '{}'::jsonb
+--    --     );
+--    --   $$
+--    -- );
+--
+-- This migration intentionally does NOT create any destructive jobs. It is
+-- documentation-only. Enable the Edge Function schedule (or the pg_cron block
+-- above) once you've reviewed and tested in a non-prod project.
