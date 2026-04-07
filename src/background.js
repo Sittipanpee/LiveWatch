@@ -790,13 +790,14 @@ async function startSession(tabId) {
 
     const { data, error } = await supabaseInsert('sessions', sessionRow);
 
-    if (error) {
+    if (error && error !== 'not_configured') {
       log.error('[LiveWatch] startSession insert failed:', error);
-      return null;
     }
 
+    // Use Supabase-assigned ID if available, otherwise generate a local UUID
+    // so the extension can still track sessions without a database backend.
     const session = Array.isArray(data) ? data[0] : data;
-    const sessionId = session?.id ?? null;
+    const sessionId = session?.id ?? crypto.randomUUID();
 
     // Dual-write to Google Sheets (fire-and-forget)
     sheetsWrite('sessions', { ...sessionRow, id: sessionId }).catch((e) =>
