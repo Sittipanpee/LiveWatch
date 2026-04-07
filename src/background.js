@@ -18,7 +18,8 @@ import {
   runChatSentimentBatch,
 } from './chat.js';
 import { finalizeSession } from './session_summary.js';
-import { getAuthToken, sheetsAppend, getOrCreateDriveFolder, uploadFrameToDrive } from './sheets.js';
+import { getAuthToken, revokeAuthToken, sheetsAppend, getOrCreateDriveFolder, uploadFrameToDrive } from './sheets.js';
+import { TIER_LIMITS, getCachedTier, refreshTierCache, effectiveCaptureInterval } from './tier.js';
 
 // ─── Logger (debug logs suppressed in production) ────────────────────────────
 
@@ -45,6 +46,7 @@ const ALARM_CAPTURE = 'captureBurst';
 const ALARM_DAILY   = 'dailySummary';
 const ALARM_HOURLY  = 'hourlySummary';
 const ALARM_SCAN    = 'scanTabs';
+const ALARM_REFRESH_TIER = 'refreshTier';
 const DAILY_SUMMARY_HOUR   = 23;
 const HOURLY_REPORT_PERIOD = 60;    // minutes
 const MAX_RECENT_CAPTURES  = 20;    // keep last 20 in storage
@@ -198,10 +200,13 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
     const driveUpload = sheetsEnabled
       ? (async () => {
           try {
+            const { driveQuotaExceeded } = await chrome.storage.local.get('driveQuotaExceeded');
+            if (driveQuotaExceeded) return null; // hard-stop until user clears flag
+
             const token = await getAuthToken(false);
             if (!token) return null;
 
-            // Retrieve or resolve the Drive folder ID
+            // Retrieve or resolve the Drive folder ID (cached across bursts).
             let { driveFolderId } = await chrome.storage.local.get('driveFolderId');
             if (!driveFolderId) {
               driveFolderId = await getOrCreateDriveFolder(token);
@@ -212,6 +217,29 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
             if (!driveFolderId) return null;
 
             const result = await uploadFrameToDrive(base64Jpeg, filename, driveFolderId, token);
+
+            // Handle Drive API error responses
+            if (result?.status === 401) {
+              log.warn('[LiveWatch] Drive 401 — clearing token, flagging expired');
+              try { await revokeAuthToken(token); } catch (_) {}
+              await chrome.storage.local.set({ googleDriveExpired: true });
+              try {
+                chrome.action.setBadgeText({ text: '!' });
+                chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+              } catch (_) {}
+              return null;
+            }
+            if (result?.status === 403 && /quota/i.test(result?.error ?? '')) {
+              log.warn('[LiveWatch] Drive 403 storageQuotaExceeded — disabling Drive uploads');
+              await chrome.storage.local.set({ driveQuotaExceeded: true });
+              return null;
+            }
+            if (result?.status === 404) {
+              // Folder may have been deleted — clear cache so next burst re-creates it
+              await chrome.storage.local.remove('driveFolderId');
+              return null;
+            }
+
             return result?.webViewLink ?? null;
           } catch (e) {
             log.error('[LiveWatch] uploadThumbnail Drive error:', e);
@@ -782,10 +810,16 @@ async function scheduleDailyAlarm() {
 
 async function startCaptureAlarm() {
   try {
+    const { config = {} } = await chrome.storage.local.get('config');
+    const userInterval = Number(config.captureInterval) || CAPTURE_INTERVAL_MINUTES;
+    const tierLimits = await getCachedTier();
+    const interval = effectiveCaptureInterval(userInterval, tierLimits);
+    await chrome.alarms.clear(ALARM_CAPTURE);
     await chrome.alarms.create(ALARM_CAPTURE, {
-      delayInMinutes: CAPTURE_INTERVAL_MINUTES,
-      periodInMinutes: CAPTURE_INTERVAL_MINUTES,
+      delayInMinutes: interval,
+      periodInMinutes: interval,
     });
+    log.info(`[LiveWatch] captureBurst alarm scheduled every ${interval} min (tier=${tierLimits.tier})`);
   } catch (e) {
     log.error('[LiveWatch] startCaptureAlarm error:', e);
   }
@@ -1021,6 +1055,20 @@ async function triggerBurst() {
     return;
   }
 
+  // Tier floor: enforce minimum gap between bursts (fail-safe to gold).
+  try {
+    const tierLimits = await getCachedTier();
+    const { lastBurstAt = 0 } = await chrome.storage.local.get('lastBurstAt');
+    const minGapMs = tierLimits.minIntervalMinutes * 60 * 1000;
+    if (Date.now() - lastBurstAt < minGapMs) {
+      console.warn('[LiveWatch] tier floor: burst suppressed, too soon');
+      return;
+    }
+    await chrome.storage.local.set({ lastBurstAt: Date.now() });
+  } catch (e) {
+    log.warn('[LiveWatch] tier floor check failed:', e?.message);
+  }
+
   state.status = STATUS.CAPTURING;
   await saveState();
 
@@ -1165,6 +1213,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   try {
     if (alarm.name === ALARM_SCAN) {
       await scanTabs();
+    } else if (alarm.name === ALARM_REFRESH_TIER) {
+      const { config = {} } = await chrome.storage.local.get('config');
+      if (config.apiBase && config.apiToken) {
+        await refreshTierCache(config.apiBase, config.apiToken);
+        // Re-schedule capture alarm in case the tier floor changed
+        if (state.status !== STATUS.OFFLINE) {
+          await startCaptureAlarm();
+        }
+      }
     } else if (alarm.name === ALARM_CAPTURE) {
       await triggerBurst();
     } else if (alarm.name === ALARM_HOURLY) {
@@ -1254,6 +1311,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === MSG.GET_STATUS) {
       sendResponse({ ...state });
       return true;
+    }
+
+    if (msg.type === 'RECONNECT_DRIVE') {
+      (async () => {
+        try {
+          const token = await getAuthToken(true);
+          if (token) {
+            await chrome.storage.local.remove(['googleDriveExpired', 'driveQuotaExceeded']);
+            try { chrome.action.setBadgeText({ text: '' }); } catch (_) {}
+            sendResponse({ ok: true });
+          } else {
+            sendResponse({ ok: false, error: 'no_token' });
+          }
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e) });
+        }
+      })();
+      return true; // async
+    }
+
+    if (msg.type === 'RESET_TIER_CACHE') {
+      (async () => {
+        try {
+          const { config = {} } = await chrome.storage.local.get('config');
+          const fresh = await refreshTierCache(config.apiBase, config.apiToken);
+          if (state.status !== STATUS.OFFLINE) {
+            await startCaptureAlarm();
+          }
+          sendResponse({ ok: true, tier: fresh });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e) });
+        }
+      })();
+      return true; // async
     }
 
     if (msg.type === MSG.TEST_BURST) {
@@ -1355,6 +1446,15 @@ async function initialize() {
     await scheduleDailyAlarm();
     await scheduleHourlyAlarm();
 
+    // Refresh user tier from SaaS backend every 6 hours
+    const tierAlarm = await chrome.alarms.get(ALARM_REFRESH_TIER);
+    if (!tierAlarm) {
+      await chrome.alarms.create(ALARM_REFRESH_TIER, {
+        delayInMinutes: 1,
+        periodInMinutes: 360,
+      });
+    }
+
     // Scan for existing live tabs
     await scanTabs();
   } catch (e) {
@@ -1366,8 +1466,23 @@ chrome.runtime.onStartup.addListener(() => {
   initialize().catch((e) => log.error('[LiveWatch] onStartup error:', e));
 });
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
+  // On update, purge any stale implicit-flow OAuth token from previous versions.
+  if (details?.reason === 'update') {
+    chrome.storage.local.remove(['googleOAuthToken', 'driveFolderId']).catch(() => {});
+  }
   initialize().catch((e) => log.error('[LiveWatch] onInstalled error:', e));
+});
+
+// Re-create capture alarm when user changes captureInterval in settings,
+// applying the tier floor.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.captureInterval && state.status !== STATUS.OFFLINE) {
+    startCaptureAlarm().catch((e) =>
+      log.error('[LiveWatch] storage.onChanged startCaptureAlarm error:', e)
+    );
+  }
 });
 
 // Run initialize immediately in case the service worker woke up without a startup/install event

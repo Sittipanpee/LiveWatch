@@ -233,12 +233,41 @@ function fetchStatus() {
 }
 
 function fetchStorage() {
-  chrome.storage.local.get(['lastAnalysis', 'lastFrame', 'todayStats', 'lastCaptureStatus'], (result) => {
-    updateAnalysis(result.lastAnalysis ?? null);
-    updateThumbnail(result.lastFrame ?? null);
-    updateTodayStats(result.todayStats ?? null);
-    updateCaptureStatus(result.lastCaptureStatus ?? null);
-  });
+  chrome.storage.local.get(
+    ['lastAnalysis', 'lastFrame', 'todayStats', 'lastCaptureStatus', 'googleDriveExpired', 'driveQuotaExceeded'],
+    (result) => {
+      updateAnalysis(result.lastAnalysis ?? null);
+      updateThumbnail(result.lastFrame ?? null);
+      updateTodayStats(result.todayStats ?? null);
+      updateCaptureStatus(result.lastCaptureStatus ?? null);
+      updateDriveStatus(result.googleDriveExpired, result.driveQuotaExceeded);
+    }
+  );
+}
+
+function updateDriveStatus(expired, quotaExceeded) {
+  const banner  = document.getElementById('driveBanner');
+  const dot     = document.getElementById('driveDot');
+  const text    = document.getElementById('driveText');
+  if (!banner || !dot || !text) return;
+
+  ['ok','err','info'].forEach(c => dot.classList.remove(c));
+
+  if (quotaExceeded) {
+    banner.textContent = '⚠️ Google Drive เต็ม — สำรองไป Supabase แทน';
+    banner.classList.add('visible');
+    dot.classList.add('err');
+    text.textContent = 'Google Drive: quota เต็ม';
+  } else if (expired) {
+    banner.textContent = '⚠️ Google Drive ต้องเชื่อมต่อใหม่';
+    banner.classList.add('visible');
+    dot.classList.add('err');
+    text.textContent = 'Google Drive: หมดอายุ';
+  } else {
+    banner.classList.remove('visible');
+    dot.classList.add('ok');
+    text.textContent = 'Google Drive: เชื่อมต่อแล้ว';
+  }
 }
 
 // ── Test button ────────────────────────────────────────────────────────────
@@ -269,9 +298,38 @@ btnTest.addEventListener('click', () => {
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 
+function renderTierBadge() {
+  const badge = document.getElementById('tierBadge');
+  if (!badge) return;
+  const colors = {
+    gold:     '#D4AF37',
+    platinum: '#B8B8B8',
+    diamond:  '#4FC3F7',
+    free:     '#888',
+  };
+  chrome.storage.local.get('userTier', (items) => {
+    if (chrome.runtime.lastError) {
+      badge.textContent = 'Free';
+      badge.style.background = colors.free;
+      return;
+    }
+    const cached = items.userTier;
+    const fresh = cached && cached.fetchedAt && (cached.fetchedAt > Date.now() - 24 * 3600 * 1000);
+    if (fresh && colors[cached.tier]) {
+      const name = cached.tier.charAt(0).toUpperCase() + cached.tier.slice(1);
+      badge.textContent = `⭐ ${name}`;
+      badge.style.background = colors[cached.tier];
+    } else {
+      badge.textContent = 'Free';
+      badge.style.background = colors.free;
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const v = chrome.runtime.getManifest().version;
   document.getElementById('versionBadge').textContent = `v${v}`;
+  renderTierBadge();
 
   fetchStatus();
   fetchStorage();
@@ -284,4 +342,19 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('unload', () => clearInterval(pollId));
 
   settingsLink.addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+  const btnReconnect = document.getElementById('btnReconnectDrive');
+  if (btnReconnect) {
+    btnReconnect.addEventListener('click', () => {
+      btnReconnect.disabled = true;
+      btnReconnect.textContent = '...';
+      chrome.runtime.sendMessage({ type: 'RECONNECT_DRIVE' }, (response) => {
+        btnReconnect.disabled = false;
+        btnReconnect.textContent = 'Reconnect';
+        if (response?.ok) {
+          fetchStorage();
+        }
+      });
+    });
+  }
 });

@@ -23,12 +23,8 @@ const DRIVE_API         = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD_API  = 'https://www.googleapis.com/upload/drive/v3/files';
 const DRIVE_FOLDER_NAME = 'LiveWatch';
 
-const OAUTH_CLIENT_ID = '437889543814-7n8n7t80f83rfl5kmjacae7v68hr42i2.apps.googleusercontent.com';
-const OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file',
-];
-const TOKEN_STORAGE_KEY = 'googleOAuthToken';
+// OAuth client_id and scopes are declared in manifest.json `oauth2` block.
+// chrome.identity.getAuthToken handles caching and silent refresh internally.
 
 /**
  * Sheet names and their column headers in insertion order.
@@ -122,51 +118,25 @@ async function parseResponse(response) {
 // ---------------------------------------------------------------------------
 
 /**
- * Obtain a Google OAuth2 token via chrome.identity.launchWebAuthFlow.
- * Caches token in chrome.storage.local with expiry. Non-throwing — returns
- * null on failure.
+ * Obtain a Google OAuth2 token via chrome.identity.getAuthToken.
+ * Chrome handles caching and silent refresh internally — there is no
+ * 1-hour expiry to manage. Non-throwing — returns null on failure.
  *
  * @param {boolean} [interactive=false] - Show consent screen if needed
  * @returns {Promise<string|null>}
  */
 export async function getAuthToken(interactive = false) {
   try {
-    // Try cached token first
-    const cached = await _getCachedToken();
-    if (cached) return cached;
-
-    const redirectUri = chrome.identity.getRedirectURL();
-    const authUrl =
-      'https://accounts.google.com/o/oauth2/v2/auth' +
-      `?client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
-      `&response_type=token` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=${encodeURIComponent(OAUTH_SCOPES.join(' '))}` +
-      `&prompt=${interactive ? 'consent' : 'none'}`;
-
-    const responseUrl = await new Promise((resolve) => {
-      chrome.identity.launchWebAuthFlow({ url: authUrl, interactive }, (url) => {
+    return await new Promise((resolve) => {
+      chrome.identity.getAuthToken({ interactive }, (token) => {
         if (chrome.runtime.lastError) {
-          console.warn('[LiveWatch] launchWebAuthFlow error:', chrome.runtime.lastError.message);
+          console.warn('[LiveWatch] getAuthToken error:', chrome.runtime.lastError.message);
           resolve(null);
           return;
         }
-        resolve(url ?? null);
+        resolve(token ?? null);
       });
     });
-
-    if (!responseUrl) return null;
-
-    // Parse fragment: #access_token=...&expires_in=...
-    const hash = responseUrl.split('#')[1] ?? '';
-    const params = new URLSearchParams(hash);
-    const token = params.get('access_token');
-    const expiresIn = parseInt(params.get('expires_in') ?? '3600', 10);
-
-    if (!token) return null;
-
-    await _setCachedToken(token, expiresIn);
-    return token;
   } catch (e) {
     console.warn('[LiveWatch] getAuthToken unhandled error:', e);
     return null;
@@ -174,7 +144,7 @@ export async function getAuthToken(interactive = false) {
 }
 
 /**
- * Revoke and remove a cached Google OAuth2 token.
+ * Revoke a Google OAuth2 token and remove it from Chrome's identity cache.
  *
  * @param {string} token
  * @returns {Promise<void>}
@@ -183,47 +153,12 @@ export async function revokeAuthToken(token) {
   if (!token) return;
 
   try {
-    await chrome.storage.local.remove(TOKEN_STORAGE_KEY);
+    await new Promise((resolve) => {
+      chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+    });
     await fetch(`https://accounts.google.com/o/oauth2/revoke?token=${encodeURIComponent(token)}`);
   } catch (e) {
     console.warn('[LiveWatch] revokeAuthToken error:', e);
-  }
-}
-
-/**
- * Read cached token from chrome.storage.local if not expired.
- *
- * @returns {Promise<string|null>}
- */
-async function _getCachedToken() {
-  try {
-    const result = await chrome.storage.local.get(TOKEN_STORAGE_KEY);
-    const entry = result[TOKEN_STORAGE_KEY];
-    if (!entry || !entry.token || !entry.expiresAt) return null;
-    // 60s safety margin
-    if (Date.now() >= entry.expiresAt - 60_000) return null;
-    return entry.token;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persist token with absolute expiry timestamp.
- *
- * @param {string} token
- * @param {number} expiresInSec
- */
-async function _setCachedToken(token, expiresInSec) {
-  try {
-    await chrome.storage.local.set({
-      [TOKEN_STORAGE_KEY]: {
-        token,
-        expiresAt: Date.now() + expiresInSec * 1000,
-      },
-    });
-  } catch (e) {
-    console.warn('[LiveWatch] _setCachedToken error:', e);
   }
 }
 
@@ -474,29 +409,17 @@ export async function uploadFrameToDrive(base64Jpeg, filename, folderId, token) 
     if (!uploadRes.ok) {
       const detail = await uploadRes.text().catch(() => String(uploadRes.status));
       console.error('[LiveWatch] uploadFrameToDrive upload failed:', uploadRes.status, detail.slice(0, 200));
-      return null;
+      return { id: null, status: uploadRes.status, error: detail.slice(0, 200), webViewLink: null };
     }
 
     const fileData = await uploadRes.json();
     const fileId   = fileData.id;
 
-    // Grant public read-only access (anyone with the link)
-    const permRes = await fetch(`${DRIVE_API}/${fileId}/permissions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-    });
-
-    if (!permRes.ok) {
-      console.warn('[LiveWatch] uploadFrameToDrive: failed to set public permission:', permRes.status);
-      // Still return the file — it's uploaded, just not publicly accessible yet
-    }
-
+    // PDPA: do NOT grant public access. Files remain private to the owner.
+    // webViewLink still works for the owner when signed into Drive.
     return {
       id: fileId,
+      status: uploadRes.status,
       webViewLink: fileData.webViewLink ?? `https://drive.google.com/file/d/${fileId}/view`,
     };
   } catch (e) {

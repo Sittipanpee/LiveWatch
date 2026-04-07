@@ -2,3 +2,5 @@
 *.pem
 key.pem
 .claude/
+.vercel
+supabase/.temp/

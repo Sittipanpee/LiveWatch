@@ -60,5 +60,12 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "oauth2": {
+    "client_id": "437889543814-7n8n7t80f83rfl5kmjacae7v68hr42i2.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive.file"
+    ]
   }
 }

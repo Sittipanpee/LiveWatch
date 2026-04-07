@@ -30,6 +30,13 @@
       font-size: 10px; font-weight: 600;
       padding: 2px 7px; border-radius: 10px;
     }
+    .header-right { display: flex; align-items: center; gap: 6px; }
+    .tier-badge {
+      font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 10px;
+      background: #888; color: #fff;
+      text-transform: capitalize;
+    }
 
     /* ── Status bar ── */
     .status-bar {
@@ -261,7 +268,10 @@
   <!-- Header -->
   <div class="header">
     <span class="header-title">TikTok Shop Helper</span>
-    <span class="version-badge" id="versionBadge"></span>
+    <div class="header-right">
+      <span id="tierBadge" class="tier-badge">Free</span>
+      <span class="version-badge" id="versionBadge"></span>
+    </div>
   </div>
 
   <!-- Status bar -->
@@ -297,6 +307,18 @@
 
     <!-- Alert banner -->
     <div class="alert-banner" id="alertBanner">⚠️ พบพฤติกรรมผิดปกติ</div>
+
+    <!-- Google Drive warning banner -->
+    <div class="alert-banner" id="driveBanner" style="background:#fff7ed;border-color:#fdba74;color:#c2410c">
+      ⚠️ Google Drive ต้องเชื่อมต่อใหม่
+    </div>
+
+    <!-- Google Drive status row -->
+    <div class="capture-log" id="driveRow" style="display:flex">
+      <span class="log-dot info" id="driveDot"></span>
+      <span class="log-text" id="driveText">Google Drive</span>
+      <button id="btnReconnectDrive" style="background:none;border:1px solid #009995;color:#009995;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">Reconnect</button>
+    </div>
 
     <!-- Last analysis result -->
     <div class="card" id="resultCard" style="display:none">

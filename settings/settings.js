@@ -38,6 +38,51 @@ const supabaseTestResult     = document.getElementById('supabaseTestResult');
 const pollinationsTestResult = document.getElementById('pollinationsTestResult');
 
 const toastEl = document.getElementById('toast');
+const tierNoteEl = document.getElementById('tierNote');
+
+// Tier limits — must match src/tier.js and SaaS backend.
+const TIER_LIMITS = {
+  gold:     { maxPerHour: 3,  minIntervalMinutes: 20 },
+  platinum: { maxPerHour: 6,  minIntervalMinutes: 10 },
+  diamond:  { maxPerHour: 12, minIntervalMinutes: 5  },
+};
+
+let currentTierMin = 20; // default to gold (most restrictive)
+let currentTierName = 'gold';
+
+/**
+ * Read cached tier from storage and apply UI constraints to the
+ * captureInterval slider (note text + min attribute).
+ */
+function applyTierConstraints() {
+  chrome.storage.local.get('userTier', (items) => {
+    if (chrome.runtime.lastError) return;
+    const cached = items.userTier;
+    if (cached && TIER_LIMITS[cached.tier]) {
+      currentTierName = cached.tier;
+      currentTierMin = cached.minIntervalMinutes ?? TIER_LIMITS[cached.tier].minIntervalMinutes;
+    } else {
+      currentTierName = 'gold';
+      currentTierMin = TIER_LIMITS.gold.minIntervalMinutes;
+    }
+
+    if (tierNoteEl) {
+      tierNoteEl.innerHTML =
+        `Your <b>${currentTierName}</b> plan allows a minimum of ${currentTierMin} minutes between captures.`;
+    }
+
+    if (captureIntervalEl) {
+      const newMin = Math.max(6, currentTierMin);
+      captureIntervalEl.min = String(newMin);
+      if (Number(captureIntervalEl.value) < newMin) {
+        captureIntervalEl.value = String(newMin);
+        if (captureIntervalDisplay) {
+          captureIntervalDisplay.textContent = String(newMin);
+        }
+      }
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -142,7 +187,14 @@ function saveSettings() {
   }
 
   // Numeric fields always saved (have defaults from <select>)
-  data.captureInterval = Number(captureIntervalEl.value);
+  let intervalVal = Number(captureIntervalEl.value);
+  if (intervalVal < currentTierMin) {
+    showToast(`Plan minimum is ${currentTierMin} minutes`, 3000);
+    intervalVal = currentTierMin;
+    captureIntervalEl.value = String(currentTierMin);
+    if (captureIntervalDisplay) captureIntervalDisplay.textContent = String(currentTierMin);
+  }
+  data.captureInterval = intervalVal;
   data.summaryHour     = Number(summaryHourEl.value);
 
   saveBtn.disabled = true;
@@ -795,6 +847,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initSheetsSection();
   initUpdateSection();
+  applyTierConstraints();
 
   // Live range display
   captureIntervalEl.addEventListener('input', () => {
