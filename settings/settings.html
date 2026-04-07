@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikTok Shop Helper — ตั้งค่า</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f6f8;
+      color: #1a1a1a;
+      font-size: 14px;
+      min-height: 100vh;
+      padding: 32px 16px 64px;
+    }
+
+    .page {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* ---- Page header ---- */
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .page-header-bar {
+      width: 4px;
+      height: 28px;
+      background: #009995;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .page-header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #009995;
+    }
+
+    .page-header p {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+
+    /* ---- Card / section ---- */
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 22px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #009995;
+      margin-bottom: 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    /* ---- Form elements ---- */
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .field:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      color: #1a1a1a;
+      background: #ffffff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    select:focus {
+      border-color: #009995;
+      box-shadow: 0 0 0 3px rgba(0, 153, 149, 0.12);
+    }
+
+    .helper-text {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 5px;
+    }
+
+    /* ---- Range slider ---- */
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: #009995;
+      cursor: pointer;
+    }
+
+    .range-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: #009995;
+      min-width: 26px;
+      text-align: center;
+    }
+
+    /* ---- Buttons ---- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-primary {
+      background: #009995;
+      color: #ffffff;
+    }
+
+    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+
+    .btn-outline {
+      background: #ffffff;
+      color: #009995;
+      border: 1.5px solid #009995;
+    }
+
+    .btn-outline:hover:not(:disabled) { background: #f0fafa; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    /* ---- Save bar ---- */
+    .save-bar {
+      margin-top: 8px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .btn-save {
+      padding: 11px 28px;
+      font-size: 14px;
+      background: #009995;
+      color: #ffffff;
+    }
+
+    .btn-save:hover:not(:disabled) { opacity: 0.88; }
+
+    /* ---- Test result badge ---- */
+    .test-result {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 10px;
+    }
+
+    .test-result.success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .test-result.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    /* ---- Toast ---- */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: #1a1a1a;
+      color: #ffffff;
+      padding: 10px 22px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s, transform 0.25s;
+      z-index: 9999;
+    }
+
+    #toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <div class="page-header-bar"></div>
+      <div>
+        <h1>TikTok Shop Helper</h1>
+        <p>ตั้งค่าระบบ LiveWatch</p>
+      </div>
+    </div>
+
+    <!-- Section 1: LINE -->
+    <div class="card">
+      <div class="section-title">การแจ้งเตือน LINE</div>
+
+      <div class="field">
+        <label for="lineToken">LINE Bot Token</label>
+        <input type="text" id="lineToken" placeholder="ey..." autocomplete="off" spellcheck="false" />
+        <div class="helper-text">ได้จาก LINE Developers Console</div>
+      </div>
+
+      <div class="field">
+        <label for="lineUserId">LINE User ID (ผู้รับแจ้งเตือน)</label>
+        <input type="text" id="lineUserId" placeholder="U..." autocomplete="off" spellcheck="false" />
+        <div class="helper-text">เจ้าของบัญชีที่จะได้รับรายงาน</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" id="testLineBtn">ทดสอบส่ง LINE</button>
+      </div>
+      <div id="lineTestResult"></div>
+    </div>
+
+    <!-- Section 1b: Pollinations AI -->
+    <div class="card">
+      <div class="section-title">Pollinations AI (วิเคราะห์ภาพ)</div>
+
+      <div class="field">
+        <label for="pollinationsKey">Pollinations API Key</label>
+        <input type="password" id="pollinationsKey" placeholder="sk_..." autocomplete="off" spellcheck="false" />
+        <div class="helper-text">ได้จาก <a href="https://enter.pollinations.ai" target="_blank" style="color:#009995">enter.pollinations.ai</a> — ใช้ model gemini-flash-lite-3.1</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" id="testPollinationsBtn">ทดสอบ API Key</button>
+      </div>
+      <div id="pollinationsTestResult"></div>
+    </div>
+
+    <!-- Section 2: Supabase -->
+    <div class="card">
+      <div class="section-title">Supabase (ฐานข้อมูล)</div>
+
+      <div class="field">
+        <label for="supabaseUrl">Supabase Project URL</label>
+        <input type="text" id="supabaseUrl" placeholder="https://xxxx.supabase.co" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="field">
+        <label for="supabaseKey">Supabase Anon Key</label>
+        <input type="password" id="supabaseKey" placeholder="eyJ..." autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" id="testSupabaseBtn">ทดสอบการเชื่อมต่อ</button>
+      </div>
+      <div id="supabaseTestResult"></div>
+    </div>
+
+    <!-- Section 2b: Google Sheets -->
+    <div class="card">
+      <div class="section-title">Google Sheets (ทางเลือกแทน Supabase)</div>
+
+      <div class="field">
+        <p style="font-size:13px;color:#374151;margin-bottom:10px;">
+          สถานะ: <span id="sheets-status" style="font-weight:700;">ไม่ได้เชื่อมต่อ</span>
+        </p>
+
+        <div class="btn-row" style="margin-top:0;">
+          <button class="btn btn-outline" id="btn-sheets-connect">เชื่อมต่อ Google Sheets</button>
+          <button class="btn btn-outline" id="btn-sheets-disconnect" style="display:none;color:#dc2626;border-color:#dc2626;">ยกเลิกการเชื่อมต่อ</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="sheets-id">Spreadsheet ID (ถ้ามีอยู่แล้ว)</label>
+        <input type="text" id="sheets-id" placeholder="Spreadsheet ID (ถ้ามีอยู่แล้ว)" autocomplete="off" spellcheck="false" />
+        <div class="helper-text">วางจาก URL: docs.google.com/spreadsheets/d/<strong>ID</strong>/edit</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" id="btn-sheets-create">สร้าง Spreadsheet ใหม่</button>
+        <button class="btn btn-outline" id="btn-sheets-save-id">บันทึก ID</button>
+      </div>
+
+      <p class="helper-text" style="margin-top:12px;">เมื่อเชื่อมต่อแล้ว ข้อมูลจะถูกบันทึกใน Google Sheets ของคุณโดยอัตโนมัติ</p>
+      <p class="helper-text" style="margin-top:4px;color:#f59e0b;">⚠️ ต้องมี OAuth Client ID ใน manifest.json ก่อนใช้งาน</p>
+    </div>
+
+    <!-- Section 3: Schedule -->
+    <div class="card">
+      <div class="section-title">การตั้งเวลา</div>
+
+      <div class="field">
+        <label for="captureInterval">บันทึกภาพทุก (นาที)</label>
+        <div class="range-row">
+          <input type="range" id="captureInterval" min="6" max="15" step="1" value="8" />
+          <span class="range-value" id="captureIntervalDisplay">8</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="summaryHour">ส่งสรุปทาง LINE เวลา</label>
+        <select id="summaryHour">
+          <option value="20">20:00 น.</option>
+          <option value="21">21:00 น.</option>
+          <option value="22">22:00 น.</option>
+          <option value="23" selected>23:00 น.</option>
+          <option value="0">00:00 น.</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Save -->
+    <div class="save-bar">
+      <button class="btn btn-primary btn-save" id="saveBtn">บันทึกการตั้งค่า</button>
+    </div>
+
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LiveWatch Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ── Error Banner (fixed top) ── -->
+  <div id="error-banner" role="alert" aria-live="assertive">
+    <span class="error-text"></span>
+    <button class="error-close" title="ปิด">✕</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SETUP SCREEN
+       Shown when localStorage config is absent.
+  ════════════════════════════════════════════════════════════ -->
+  <div id="setup-screen" class="setup-screen" style="display:none">
+    <div class="setup-card">
+      <div class="setup-logo">Live<span>Watch</span></div>
+      <div class="setup-subtitle">Dashboard สำหรับดูข้อมูลการไลฟ์สด</div>
+
+      <form id="setup-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label" for="input-url">Supabase URL</label>
+          <input
+            id="input-url"
+            class="form-input"
+            type="url"
+            placeholder="https://xxxxxxxxxxxx.supabase.co"
+            required
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="input-key">Service Role Key</label>
+          <input
+            id="input-key"
+            class="form-input"
+            type="password"
+            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            required
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+        </div>
+
+        <button id="btn-connect" class="btn-primary" type="submit">
+          เชื่อมต่อ
+        </button>
+      </form>
+
+      <div class="setup-warning">
+        ⚠️ ใช้ Service Role Key — อย่าแชร์หน้านี้กับผู้อื่น
+        และอย่าเปิดทิ้งไว้บนคอมพิวเตอร์สาธารณะ
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       MAIN APP
+       Shown after successful config is saved.
+  ════════════════════════════════════════════════════════════ -->
+  <div id="main-app" class="app-layout" style="display:none">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="app-header-title">Live<span>Watch</span> Dashboard</div>
+      <button id="btn-disconnect" class="btn-disconnect">ล้างการตั้งค่า</button>
+    </header>
+
+    <!-- Body: session list + detail panel -->
+    <div class="app-body">
+
+      <!-- Left: Session list -->
+      <aside class="session-list-panel">
+        <div class="panel-header">
+          <div class="panel-title">เซสชันล่าสุด</div>
+        </div>
+        <div id="session-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            กำลังโหลด...
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: Detail panel -->
+      <main id="detail-panel" class="detail-panel">
+        <div class="detail-placeholder">
+          <div class="detail-placeholder-icon">📊</div>
+          <div class="detail-placeholder-text">เลือกเซสชันเพื่อดูรายละเอียด</div>
+        </div>
+      </main>
+
+    </div><!-- /.app-body -->
+  </div><!-- /#main-app -->
+
+  <!-- Chart.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <!-- App module -->
+  <script type="module" src="app.js"></script>
+
+</body>
+</html>

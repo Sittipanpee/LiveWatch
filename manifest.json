@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "TikTok Shop Helper",
+  "version": "1.0.0",
+  "description": "ผู้ช่วยสำหรับ TikTok Live Shop",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA35IcUPpZsH0qhA/3/I+Kso82PU4DoFjqHlGnAaQZiHd9MQLklll/3r/FJocOvRyFnX19mdV+cKy7hSh6IaVqajNADXWD/FxozizHX91YIO4DNEXIdkufU5N+UKgs3D7SHCFDmbDCERj2ivgDuhyjDdscgdj7fJ7f4KuGuaZSqqedxmGSrcn+v6fhQY8gjyzrwvltECqO8XeDUUxEROwl5iAI2xJKD6AqWDWjE1s/l3s+NIWokNCEzJjDVmBsSanQ+Vou1Ta2qILIYTqc0d9dA5BxGPzmJP2RgF0eHXleNz1lwxU0eZI+ymwhhW2gIuaf9+EHku83Gy6eEL/EpnPBtQIDAQAB",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://shop.tiktok.com/*",
+    "https://text.pollinations.ai/*",
+    "https://gen.pollinations.ai/*",
+    "https://api.line.me/*",
+    "*://*.supabase.co/*",
+    "https://sheets.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://shop.tiktok.com/streamer/live/*"
+      ],
+      "js": [
+        "src/injected.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://shop.tiktok.com/streamer/live/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "settings/settings.html",
+  "icons": {
+    "128": "icons/icon128.png"
+  }
+}

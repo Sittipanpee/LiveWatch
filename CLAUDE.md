@@ -1,0 +1,110 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**LiveWatch Extension** — a Chrome Extension (Manifest V3) that monitors TikTok Shop live streaming sessions for Thai sellers. It captures video frames every 8 minutes, analyzes presenter behavior via AI vision, and sends real-time alerts via LINE messaging.
+
+## No Build Tooling
+
+This is **vanilla JavaScript with no build step**. There is no npm, no bundler, no transpilation. Load directly into Chrome:
+
+1. Open `chrome://extensions/`
+2. Enable "Developer mode"
+3. "Load unpacked" → select this directory
+
+There are no test commands. Use the in-extension test buttons (Settings page has connectivity tests; Popup has a manual capture burst button). All logs are prefixed `[LiveWatch]` in the browser console.
+
+## Architecture
+
+```
+background.js (Service Worker, type: module)
+    ↕ chrome.runtime.sendMessage
+content.js (injected into shop.tiktok.com/streamer/live/*)
+    ↕ chrome.storage.local (polling every 2s)
+popup/popup.js
+settings/settings.js
+```
+
+**`src/background.js`** — the main engine (~1135 lines). Owns a state machine (`OFFLINE → MONITORING → CAPTURING → ANALYZING → MONITORING`), manages chrome.alarms, and orchestrates all external API calls.
+
+**`src/content.js`** — injected into TikTok live pages. Uses MutationObserver to detect the `<video>` element, sends `LIVE_STARTED`/`LIVE_ENDED`/`HEARTBEAT` messages to background, and performs `performCaptureBurst()` (3 JPEG frames, 5s apart, canvas.toDataURL at quality 0.6).
+
+**`src/ai.js`** — Pollinations vision API wrapper (OpenAI-compatible). Sends frames as base64 images to `gemini-flash-lite-3.1`, returns structured JSON scores.
+
+**`src/line.js`** — LINE Messaging API push notifications. All message formatting is in Thai.
+
+**`src/supabase.js`** — thin REST wrapper (no SDK; MV3 forbids external npm packages). Returns `{ data, error }` shape.
+
+**`src/constants.js`** — shared constants used across modules. Content scripts cannot use ES6 imports, so any constants needed there must be inlined.
+
+## Key Constraint: ES6 Modules
+
+Only `background.js` (declared `type: module` in manifest) can use `import`. Content scripts (`content.js`) run in a different context and **cannot import**. Any constants or utilities needed in content scripts must be duplicated inline — do not add import statements to `content.js`.
+
+## Alarm Schedule
+
+| Alarm | Interval | Action |
+|-------|----------|--------|
+| `captureBurst` | 8 min (configurable 6–15) | Triggers frame capture → AI analysis → Supabase insert → LINE alert |
+| `dailySummary` | Daily at 23:00 (configurable) | Aggregates analysis_logs, sends LINE summary |
+| `hourlySummary` | Every 60 min | Sends recent captures report to LINE |
+| `scanTabs` | Every 2 min | Detects new live tabs |
+
+## External APIs
+
+| Service | Purpose | Config Key |
+|---------|---------|------------|
+| Pollinations (`gen.pollinations.ai`) | Vision AI analysis | `pollinationsKey` |
+| LINE Messaging API | Push notifications | `lineToken`, `lineUserId` |
+| Supabase REST | Database + frame storage | `supabaseUrl`, `supabaseKey` |
+
+All credentials are stored in `chrome.storage.local` under the `config` key. **Supabase RLS is set to service_role only** — the anon key stored in the extension must be the service_role key for writes to succeed.
+
+## Database Schema
+
+Three Supabase tables (see `supabase/schema.sql`):
+- **`sessions`** — one row per live session
+- **`analysis_logs`** — one row per capture burst (8-min interval); stores AI scores and thumbnail URL
+- **`daily_summaries`** — one row per calendar date
+
+Storage bucket: `livewatch-frames`, path pattern: `frames/{date}/{sessionId}/{timestamp}.jpg`
+
+## State Stored in chrome.storage.local
+
+| Key | Contents |
+|-----|----------|
+| `config` | API credentials + timing settings |
+| `extensionState` | `{ status, liveTabId, sessionId, lastHeartbeat }` |
+| `lastAnalysis` | Most recent AI analysis JSON |
+| `lastFrame` | Base64 thumbnail of last captured frame |
+| `todayStats` | Aggregated daily metrics |
+| `recentCaptures` | Ring buffer, last 20 captures |
+| `localLogs` | Rolling 200-entry log |
+
+## Capture Pipeline (Critical Path)
+
+```
+chrome.alarms('captureBurst')
+  → background.triggerBurst()
+  → content.performCaptureBurst()   [3 frames, 5s apart]
+  → background.analyzeFrames()      [Pollinations API]
+  → uploadThumbnail()               [Supabase Storage]
+  → supabaseInsert('analysis_logs')
+  → sendCaptureAlert()              [LINE API]
+  → popup polls storage every 2s   [UI updates]
+```
+
+## Alert Logic
+
+- Phone alert triggers if `phone_detected` in 2+ frames OR `eye_contact_score < 20`
+- All alerts sent immediately per burst (not batched)
+- LINE messages include thumbnail only if Supabase is configured
+
+## Workflow Rule
+
+**Before marking any task complete, update `docs/features.md`:**
+- Check off `- [x]` any items that are now fully implemented
+- Add new items under the appropriate phase if scope expanded
+- This must happen before the final response to the user — not as an afterthought
