@@ -20,7 +20,8 @@
     "*://*.supabase.co/*",
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "https://accounts.google.com/*"
+    "https://accounts.google.com/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "service_worker": "src/background.js",

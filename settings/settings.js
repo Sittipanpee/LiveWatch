@@ -608,9 +608,135 @@ function handleSheetsSaveId() {
 // Event listeners
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Update checker
+// ---------------------------------------------------------------------------
+
+const GITHUB_REPO = 'Sittipanpee/LiveWatch';
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const RELEASES_PAGE = `https://github.com/${GITHUB_REPO}/releases/latest`;
+const ZIPBALL_URL   = `https://github.com/${GITHUB_REPO}/archive/refs/heads/main.zip`;
+
+const currentVersionEl  = document.getElementById('currentVersion');
+const lastCheckedLabelEl = document.getElementById('lastCheckedLabel');
+const checkUpdateBtn    = document.getElementById('checkUpdateBtn');
+const updateStatusEl    = document.getElementById('updateStatus');
+
+/** Parse semver string into comparable integer, e.g. "1.2.3" → 10203 */
+function parseSemver(v) {
+  const parts = String(v).replace(/^v/, '').split('.').map(Number);
+  return (parts[0] ?? 0) * 10000 + (parts[1] ?? 0) * 100 + (parts[2] ?? 0);
+}
+
+function initUpdateSection() {
+  const manifest = chrome.runtime.getManifest();
+  const current = manifest.version;
+  currentVersionEl.textContent = `v${current}`;
+
+  chrome.storage.local.get(['lastUpdateCheck'], (items) => {
+    if (chrome.runtime.lastError) return;
+    if (items.lastUpdateCheck) {
+      const d = new Date(items.lastUpdateCheck);
+      lastCheckedLabelEl.textContent = `ตรวจสอบล่าสุด: ${d.toLocaleDateString('th-TH')} ${d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+  });
+}
+
+function renderUpdateAvailable(latestTag, releaseNotes) {
+  updateStatusEl.style.display = '';
+  updateStatusEl.innerHTML = `
+    <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:14px 16px;">
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:6px;">
+        🆕 มีเวอร์ชันใหม่: <span style="color:#d97706;">${latestTag}</span>
+      </div>
+      ${releaseNotes ? `<div style="font-size:12px;color:#78350f;margin-bottom:10px;white-space:pre-wrap;max-height:80px;overflow:auto;">${releaseNotes.slice(0, 300)}</div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="${ZIPBALL_URL}" download
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#f59e0b;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+          ⬇ ดาวน์โหลดอัพเดต (.zip)
+        </a>
+        <a href="${RELEASES_PAGE}" target="_blank"
+           style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#fff;color:#92400e;border:1.5px solid #f59e0b;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+          ดูรายละเอียด
+        </a>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#78350f;background:#fffbeb;border-radius:8px;padding:10px 12px;line-height:1.8;">
+        <strong>วิธีอัพเดต (3 ขั้นตอน):</strong><br>
+        1. กดปุ่ม "ดาวน์โหลดอัพเดต" ด้านบน<br>
+        2. แตกไฟล์ .zip ทับโฟลเดอร์เดิม (แทนที่ไฟล์ทั้งหมด)<br>
+        3. เปิด <strong>chrome://extensions/</strong> แล้วกด 🔄 Reload ที่ TikTok Shop Helper
+      </div>
+    </div>`;
+}
+
+function renderUpToDate(latestTag) {
+  updateStatusEl.style.display = '';
+  updateStatusEl.innerHTML = `
+    <div style="background:#d1fae5;border:1.5px solid #34d399;border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;color:#065f46;">
+      ✓ ใช้เวอร์ชันล่าสุดอยู่แล้ว (${latestTag})
+    </div>`;
+}
+
+function renderUpdateError(message) {
+  updateStatusEl.style.display = '';
+  updateStatusEl.innerHTML = `
+    <div style="background:#fee2e2;border:1.5px solid #f87171;border-radius:10px;padding:12px 16px;font-size:13px;color:#991b1b;">
+      ✗ ตรวจสอบไม่ได้: ${message}
+    </div>`;
+}
+
+async function checkForUpdates() {
+  checkUpdateBtn.disabled = true;
+  checkUpdateBtn.textContent = 'กำลังตรวจสอบ...';
+  updateStatusEl.style.display = 'none';
+
+  try {
+    const res = await fetch(RELEASES_API, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+    });
+
+    const now = new Date().toISOString();
+    chrome.storage.local.set({ lastUpdateCheck: now });
+    lastCheckedLabelEl.textContent = `ตรวจสอบล่าสุด: เมื่อกี้นี้`;
+
+    if (res.status === 404) {
+      // No releases yet — repo is up to date by definition
+      renderUpToDate('(ยังไม่มี release)');
+      return;
+    }
+
+    if (!res.ok) {
+      renderUpdateError(`GitHub ตอบกลับ ${res.status}`);
+      return;
+    }
+
+    const data = await res.json();
+    const latestTag = data.tag_name ?? '';
+    const releaseNotes = data.body ?? '';
+    const current = chrome.runtime.getManifest().version;
+
+    if (!latestTag) {
+      renderUpToDate('(ยังไม่มี release)');
+      return;
+    }
+
+    if (parseSemver(latestTag) > parseSemver(current)) {
+      renderUpdateAvailable(latestTag, releaseNotes);
+    } else {
+      renderUpToDate(latestTag);
+    }
+  } catch (err) {
+    renderUpdateError(err.message);
+  } finally {
+    checkUpdateBtn.disabled = false;
+    checkUpdateBtn.textContent = 'ตรวจสอบอัพเดต';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initSheetsSection();
+  initUpdateSection();
 
   // Live range display
   captureIntervalEl.addEventListener('input', () => {
@@ -626,4 +752,6 @@ document.addEventListener('DOMContentLoaded', () => {
   btnSheetsDisconnect.addEventListener('click', handleSheetsDisconnect);
   btnSheetsCreate.addEventListener('click', handleSheetsCreate);
   btnSheetsSaveId.addEventListener('click', handleSheetsSaveId);
+
+  checkUpdateBtn.addEventListener('click', checkForUpdates);
 });

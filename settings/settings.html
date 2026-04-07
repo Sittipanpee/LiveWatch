@@ -368,6 +368,21 @@
       <button class="btn btn-primary btn-save" id="saveBtn">บันทึกการตั้งค่า</button>
     </div>
 
+    <!-- Section: Update -->
+    <div class="card" style="margin-top:28px;">
+      <div class="section-title">อัพเดตระบบ</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:13px;color:#374151;">เวอร์ชันปัจจุบัน: <strong id="currentVersion">—</strong></div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:3px;" id="lastCheckedLabel"></div>
+        </div>
+        <button class="btn btn-outline" id="checkUpdateBtn">ตรวจสอบอัพเดต</button>
+      </div>
+
+      <div id="updateStatus" style="margin-top:14px;display:none;"></div>
+    </div>
+
   </div>
 
   <!-- Toast -->
