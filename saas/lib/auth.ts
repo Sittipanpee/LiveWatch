@@ -23,7 +23,7 @@ export async function authenticateRequest(
 ): Promise<AuthenticatedRequest | null> {
   const header = request.headers.get('authorization') ?? ''
   const match = /^Bearer\s+(.+)$/i.exec(header)
-  if (!match) return null
+  if (!match || !match[1]) return null
   const token = match[1].trim()
   if (!isLikelyApiToken(token)) return null
 
