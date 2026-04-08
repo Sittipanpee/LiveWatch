@@ -8,18 +8,20 @@
     btn.disabled = !checkbox.checked;
   });
 
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     if (!checkbox.checked) return;
-    const payload = {
-      onboardingCompleted: true,
-      onboardingCompletedAt: Date.now(),
-    };
     try {
-      chrome.storage.local.set(payload, () => {
-        window.close();
+      await chrome.storage.local.set({
+        onboardingCompleted: true,
+        onboardingCompletedAt: Date.now(),
       });
+    } catch (_) {}
+    try {
+      const extId = chrome.runtime.id;
+      await chrome.tabs.create({ url: `https://livewatch-psi.vercel.app/login?extId=${extId}` });
     } catch (e) {
-      window.close();
+      console.warn('[LiveWatch] failed to open signup after onboarding:', e);
     }
+    window.close();
   });
 })();

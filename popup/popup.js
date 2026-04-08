@@ -354,8 +354,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const banner = document.getElementById('connectBanner');
   if (banner) {
-    banner.addEventListener('click', () => chrome.runtime.openOptionsPage());
+    banner.addEventListener('click', () => {
+      const extId = chrome.runtime.id;
+      chrome.tabs.create({ url: `https://livewatch-psi.vercel.app/login?extId=${extId}` });
+    });
   }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.config || changes.userTier)) {
+      renderConnectionStatus?.();
+      renderTierBadge?.();
+    }
+  });
 
   fetchStatus();
   fetchStorage();

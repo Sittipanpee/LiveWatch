@@ -29,3 +29,22 @@ will fail until you do ONE of:
   machine.
 
 **This file exists as a TODO marker — remove it once the `key` field is added.**
+
+## External messaging (auto-paste token flow)
+
+The extension whitelists the SaaS origin in `manifest.json` under
+`externally_connectable.matches`. The dashboard at `livewatch-psi.vercel.app`
+can send messages to the extension using:
+
+    chrome.runtime.sendMessage(extId, { type: 'SET_API_TOKEN', token, apiBase })
+
+The extension ID is passed from the extension to the web page via the
+`?extId=` query param on the login/dashboard URL. This works for both:
+- Published extensions (stable ID from Chrome Web Store)
+- Unpacked dev installs (random per-folder ID — passed dynamically)
+
+The extension's `onMessageExternal` handler validates the sender origin
+against a whitelist, checks that the token starts with `lw_`, and stores
+it in `chrome.storage.local.config`, then immediately fetches the user's
+tier to cache it.
+

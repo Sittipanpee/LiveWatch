@@ -873,4 +873,27 @@ document.addEventListener('DOMContentLoaded', () => {
   btnSheetsSaveId.addEventListener('click', handleSheetsSaveId);
 
   checkUpdateBtn.addEventListener('click', checkForUpdates);
+
+  // Sign up + dashboard buttons — open SaaS with extId for external messaging
+  const openWithExtId = (path) => {
+    const extId = chrome.runtime.id;
+    chrome.tabs.create({ url: `https://livewatch-psi.vercel.app${path}?extId=${extId}` });
+  };
+  document.getElementById('btnSignUp')?.addEventListener('click', () => openWithExtId('/login'));
+  document.getElementById('btnOpenDashboard')?.addEventListener('click', () => openWithExtId('/dashboard'));
+
+  // Listen for token updates pushed externally (from the dashboard via onMessageExternal)
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.config) return;
+    const newConfig = changes.config.newValue ?? {};
+    if (newConfig.apiToken) {
+      if (apiTokenEl) apiTokenEl.value = newConfig.apiToken;
+      if (apiBaseEl && newConfig.apiBase) apiBaseEl.value = newConfig.apiBase;
+      if (apiStatusEl) {
+        apiStatusEl.textContent = '✅ Token received — testing...';
+        apiStatusEl.style.color = '#065f46';
+      }
+      testApiBtn?.click();
+    }
+  });
 });

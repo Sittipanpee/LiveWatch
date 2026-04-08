@@ -1328,6 +1328,63 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+// ─── External message handler (web page → extension token handoff) ──────────
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  const senderOrigin = sender?.url ? (() => { try { return new URL(sender.url).origin; } catch { return ''; } })() : '';
+  const isAllowed =
+    senderOrigin === 'https://livewatch-psi.vercel.app' ||
+    senderOrigin === 'http://localhost:3000' ||
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(senderOrigin);
+
+  if (!isAllowed) {
+    console.warn('[LiveWatch] rejected external message from', senderOrigin);
+    sendResponse({ ok: false, error: 'origin not allowed' });
+    return;
+  }
+
+  if (message?.type === 'SET_API_TOKEN' && typeof message.token === 'string' && message.token.startsWith('lw_')) {
+    (async () => {
+      try {
+        const { config = {} } = await chrome.storage.local.get('config');
+        const apiBase = (message.apiBase ?? config.apiBase ?? 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+        await chrome.storage.local.set({
+          config: { ...config, apiBase, apiToken: message.token },
+        });
+        try { chrome.action.setBadgeText({ text: '' }); } catch (_) {}
+
+        try {
+          const res = await fetch(`${apiBase}/api/user/tier`, {
+            headers: { Authorization: `Bearer ${message.token}` },
+          });
+          if (res.ok) {
+            const tier = await res.json();
+            await chrome.storage.local.set({
+              userTier: {
+                tier: tier.tier,
+                maxPerHour: tier.maxCapturesPerHour,
+                minIntervalMinutes: tier.minIntervalMinutes,
+                fetchedAt: Date.now(),
+              },
+            });
+          }
+        } catch (e) {
+          console.warn('[LiveWatch] tier fetch after SET_API_TOKEN failed:', e);
+        }
+
+        sendResponse({ ok: true });
+      } catch (e) {
+        console.error('[LiveWatch] SET_API_TOKEN handler error:', e);
+        sendResponse({ ok: false, error: String(e) });
+      }
+    })();
+    return true;
+  }
+
+  sendResponse({ ok: false, error: 'unknown message type' });
+  return false;
+});
+
 // ─── Tab event listeners ──────────────────────────────────────────────────────
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {

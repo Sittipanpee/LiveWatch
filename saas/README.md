@@ -108,3 +108,15 @@ Public, server-rendered pages (no auth) linked from the global footer:
 Note: Before submitting the Chrome extension to the Web Store, replace the
 `support@livewatch.app` placeholder with your real contact email in both
 `app/privacy/page.tsx` and `app/terms/page.tsx`.
+
+## Extension Integration
+
+The Chrome extension connects to this SaaS via API tokens. Flow:
+
+1. Extension opens `/login?extId=<chrome.runtime.id>`
+2. User signs up / logs in — extId persists via sessionStorage across redirect
+3. Dashboard "Chrome Extension Connection" section lets user generate a token
+4. "Send to Extension" button auto-configures the extension via
+   `chrome.runtime.sendMessage(extId, { type: 'SET_API_TOKEN', token, apiBase })`
+5. Extension receives the token, validates sender origin, stores in chrome.storage.local
+6. Manual copy-paste remains as fallback for non-Chrome browsers

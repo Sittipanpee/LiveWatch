@@ -1,6 +1,21 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+
+interface ChromeRuntimeSendMessageResponse {
+  ok?: boolean
+  error?: string
+}
+
+interface ChromeRuntimeApi {
+  runtime?: {
+    sendMessage: (
+      extId: string,
+      msg: { type: string; token: string; apiBase: string },
+      callback: (resp: ChromeRuntimeSendMessageResponse | undefined) => void,
+    ) => void
+  }
+}
 
 export interface TokenRow {
   id: string
@@ -32,6 +47,40 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
   const [error, setError] = useState<string | null>(null)
   const [plaintext, setPlaintext] = useState<string | null>(null)
   const [copied, setCopied] = useState<boolean>(false)
+  const [extId, setExtId] = useState<string | null>(null)
+  const [sendStatus, setSendStatus] = useState<string | null>(null)
+
+  useEffect(() => {
+    setExtId(sessionStorage.getItem('lw_extId'))
+  }, [])
+
+  const sendToExtension = (token: string): void => {
+    const apiBase = window.location.origin
+    try {
+      const chromeApi = (window as unknown as { chrome?: ChromeRuntimeApi }).chrome
+      if (!chromeApi?.runtime?.sendMessage || !extId) {
+        setSendStatus('Chrome extension not detected. Copy the token manually below.')
+        return
+      }
+      chromeApi.runtime.sendMessage(
+        extId,
+        { type: 'SET_API_TOKEN', token, apiBase },
+        (response) => {
+          if (response?.ok) {
+            setSendStatus(
+              'ส่งไปยัง Extension สำเร็จ! ปิดหน้านี้และกลับไปที่ Chrome / Sent! Close this tab and return to Chrome.',
+            )
+          } else {
+            setSendStatus(
+              `${response?.error ?? 'Failed to reach extension'}. Copy the token manually below.`,
+            )
+          }
+        },
+      )
+    } catch (e) {
+      setSendStatus(`${e instanceof Error ? e.message : 'unknown error'}. Copy manually.`)
+    }
+  }
 
   const refresh = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/tokens/list', { cache: 'no-store' })
@@ -129,7 +178,24 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
           >
             {plaintext}
           </pre>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {extId ? (
+              <button
+                type="button"
+                onClick={() => sendToExtension(plaintext)}
+                style={{
+                  padding: '8px 16px',
+                  background: '#1565c0',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ส่งไปยัง Extension / Send to Extension
+              </button>
+            ) : null}
             <button type="button" onClick={copy} style={{ padding: '6px 12px' }}>
               {copied ? 'Copied!' : 'Copy'}
             </button>
@@ -137,6 +203,14 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
               I have saved it
             </button>
           </div>
+          {sendStatus ? (
+            <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>{sendStatus}</p>
+          ) : null}
+          {!extId ? (
+            <p style={{ fontSize: 12, marginTop: 8, marginBottom: 0, color: '#777' }}>
+              Open this page from the Chrome extension Settings to enable direct send.
+            </p>
+          ) : null}
         </div>
       ) : (
         <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
