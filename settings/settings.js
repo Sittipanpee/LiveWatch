@@ -5,8 +5,6 @@
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEYS = [
-  'lineToken',
-  'lineUserId',
   'pollinationsKey',
   'supabaseUrl',
   'supabaseKey',
@@ -18,8 +16,10 @@ const STORAGE_KEYS = [
 // DOM references
 // ---------------------------------------------------------------------------
 
-const lineTokenEl      = document.getElementById('lineToken');
-const lineUserIdEl     = document.getElementById('lineUserId');
+const apiBaseEl        = document.getElementById('apiBase');
+const apiTokenEl       = document.getElementById('apiToken');
+const testApiBtn       = document.getElementById('testApi');
+const apiStatusEl      = document.getElementById('apiStatus');
 const pollinationsKeyEl  = document.getElementById('pollinationsKey');
 const supabaseUrlEl      = document.getElementById('supabaseUrl');
 const supabaseKeyEl    = document.getElementById('supabaseKey');
@@ -28,12 +28,10 @@ const captureIntervalDisplay = document.getElementById('captureIntervalDisplay')
 const summaryHourEl    = document.getElementById('summaryHour');
 
 const saveBtn              = document.getElementById('saveBtn');
-const testLineBtn          = document.getElementById('testLineBtn');
 const testSupabaseBtn      = document.getElementById('testSupabaseBtn');
 const testPollinationsBtn  = document.getElementById('testPollinationsBtn');
 const setupStorageBtn      = document.getElementById('setupStorageBtn');
 
-const lineTestResult         = document.getElementById('lineTestResult');
 const supabaseTestResult     = document.getElementById('supabaseTestResult');
 const pollinationsTestResult = document.getElementById('pollinationsTestResult');
 
@@ -146,8 +144,6 @@ function loadSettings() {
       return;
     }
 
-    if (items.lineToken)       lineTokenEl.value       = items.lineToken;
-    if (items.lineUserId)      lineUserIdEl.value      = items.lineUserId;
     if (items.pollinationsKey) pollinationsKeyEl.value = items.pollinationsKey;
     if (items.supabaseUrl)     supabaseUrlEl.value     = items.supabaseUrl;
     if (items.supabaseKey)     supabaseKeyEl.value     = items.supabaseKey;
@@ -174,8 +170,6 @@ function loadSettings() {
 function saveSettings() {
   const fields = {
     pollinationsKey: pollinationsKeyEl.value.trim(),
-    lineToken:       lineTokenEl.value.trim(),
-    lineUserId:      lineUserIdEl.value.trim(),
     supabaseUrl:     normaliseUrl(supabaseUrlEl.value.trim()),
     supabaseKey:     supabaseKeyEl.value.trim(),
   };
@@ -212,51 +206,63 @@ function saveSettings() {
 }
 
 // ---------------------------------------------------------------------------
-// Test LINE notification
+// Connect LiveWatch Account (SaaS API)
 // ---------------------------------------------------------------------------
 
-async function testLine() {
-  const token  = lineTokenEl.value.trim();
-  const userId = lineUserIdEl.value.trim();
+function loadApiConfig() {
+  chrome.storage.local.get('config', (items) => {
+    if (chrome.runtime.lastError) return;
+    const config = items.config ?? {};
+    if (config.apiBase) apiBaseEl.value = config.apiBase;
+    if (config.apiToken) apiTokenEl.value = config.apiToken;
+  });
+}
 
-  if (!token || !userId) {
-    showTestResult(lineTestResult, 'error', 'กรุณากรอก Token และ User ID ก่อนทดสอบ');
+async function testApiConnection() {
+  const apiBase = apiBaseEl.value.trim().replace(/\/$/, '');
+  const apiToken = apiTokenEl.value.trim();
+  if (!apiToken) {
+    apiStatusEl.textContent = '❌ กรุณากรอก API Token';
+    apiStatusEl.style.color = '#991b1b';
     return;
   }
-
-  testLineBtn.disabled = true;
-  clearTestResult(lineTestResult);
-
-  const body = JSON.stringify({
-    to: userId,
-    messages: [
-      {
-        type: 'text',
-        text: '[LiveWatch] ทดสอบการแจ้งเตือน — ระบบทำงานปกติ ✓',
-      },
-    ],
-  });
-
+  apiStatusEl.textContent = '⏳ กำลังทดสอบ...';
+  apiStatusEl.style.color = '#6b7280';
+  testApiBtn.disabled = true;
   try {
-    const res = await fetch('https://api.line.me/v2/bot/message/push', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body,
+    const res = await fetch(`${apiBase}/api/user/tier`, {
+      headers: { Authorization: `Bearer ${apiToken}` },
     });
-
-    if (res.ok) {
-      showTestResult(lineTestResult, 'success', 'ส่งข้อความสำเร็จ');
-    } else {
-      const detail = await res.text().catch(() => String(res.status));
-      showTestResult(lineTestResult, 'error', `ส่งไม่สำเร็จ (${res.status}): ${detail.slice(0, 80)}`);
+    if (res.status === 401) {
+      apiStatusEl.textContent = '❌ Token ไม่ถูกต้อง';
+      apiStatusEl.style.color = '#991b1b';
+      return;
     }
-  } catch (err) {
-    showTestResult(lineTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
+    if (!res.ok) {
+      apiStatusEl.textContent = `❌ Error ${res.status}`;
+      apiStatusEl.style.color = '#991b1b';
+      return;
+    }
+    const tier = await res.json();
+    apiStatusEl.textContent = `✅ เชื่อมต่อสำเร็จ • Tier: ${tier.tier} • Min interval: ${tier.minIntervalMinutes} min`;
+    apiStatusEl.style.color = '#065f46';
+
+    const { config = {} } = await chrome.storage.local.get('config');
+    await chrome.storage.local.set({
+      config: { ...config, apiBase, apiToken },
+      userTier: {
+        tier: tier.tier,
+        maxPerHour: tier.maxCapturesPerHour,
+        minIntervalMinutes: tier.minIntervalMinutes,
+        fetchedAt: Date.now(),
+      },
+    });
+    if (typeof applyTierConstraints === 'function') applyTierConstraints();
+  } catch (e) {
+    apiStatusEl.textContent = `❌ ${e.message}`;
+    apiStatusEl.style.color = '#991b1b';
   } finally {
-    testLineBtn.disabled = false;
+    testApiBtn.disabled = false;
   }
 }
 
@@ -845,6 +851,7 @@ async function checkForUpdates() {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
+  loadApiConfig();
   initSheetsSection();
   initUpdateSection();
   applyTierConstraints();
@@ -856,7 +863,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   saveBtn.addEventListener('click', saveSettings);
   testPollinationsBtn.addEventListener('click', testPollinations);
-  testLineBtn.addEventListener('click', testLine);
+  testApiBtn.addEventListener('click', testApiConnection);
   testSupabaseBtn.addEventListener('click', testSupabase);
   setupStorageBtn.addEventListener('click', setupStorageBucket);
 

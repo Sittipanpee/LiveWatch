@@ -326,10 +326,36 @@ function renderTierBadge() {
   });
 }
 
+function renderConnectionStatus() {
+  const dot = document.getElementById('connStatus');
+  const banner = document.getElementById('connectBanner');
+  if (!dot) return;
+  chrome.storage.local.get('config', (items) => {
+    const connected = !!(items?.config?.apiToken);
+    if (connected) {
+      dot.classList.add('connected');
+      dot.classList.remove('disconnected');
+      dot.title = 'Connected';
+      if (banner) banner.classList.remove('visible');
+    } else {
+      dot.classList.add('disconnected');
+      dot.classList.remove('connected');
+      dot.title = 'Not connected — open Settings';
+      if (banner) banner.classList.add('visible');
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const v = chrome.runtime.getManifest().version;
   document.getElementById('versionBadge').textContent = `v${v}`;
   renderTierBadge();
+  renderConnectionStatus();
+
+  const banner = document.getElementById('connectBanner');
+  if (banner) {
+    banner.addEventListener('click', () => chrome.runtime.openOptionsPage());
+  }
 
   fetchStatus();
   fetchStorage();

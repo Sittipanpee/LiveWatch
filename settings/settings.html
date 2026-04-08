@@ -251,26 +251,28 @@
       </div>
     </div>
 
-    <!-- Section 1: LINE -->
+    <!-- Section 1: Connect LiveWatch Account -->
     <div class="card">
-      <div class="section-title">การแจ้งเตือน LINE</div>
+      <div class="section-title">เชื่อมต่อบัญชี LiveWatch / Connect LiveWatch Account</div>
 
       <div class="field">
-        <label for="lineToken">LINE Bot Token</label>
-        <input type="text" id="lineToken" placeholder="ey..." autocomplete="off" spellcheck="false" />
-        <div class="helper-text">ได้จาก LINE Developers Console</div>
+        <p class="helper-text" style="margin-bottom:10px;">รับ API Token จาก <a href="https://livewatch-psi.vercel.app/dashboard" target="_blank" style="color:#009995">livewatch-psi.vercel.app/dashboard</a> → Chrome Extension Connection → Generate new token</p>
       </div>
 
       <div class="field">
-        <label for="lineUserId">LINE User ID (ผู้รับแจ้งเตือน)</label>
-        <input type="text" id="lineUserId" placeholder="U..." autocomplete="off" spellcheck="false" />
-        <div class="helper-text">เจ้าของบัญชีที่จะได้รับรายงาน</div>
+        <label for="apiBase">API Base URL</label>
+        <input type="text" id="apiBase" value="https://livewatch-psi.vercel.app" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="field">
+        <label for="apiToken">API Token</label>
+        <input type="password" id="apiToken" placeholder="lw_..." autocomplete="off" spellcheck="false" />
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-outline" id="testLineBtn">ทดสอบส่ง LINE</button>
+        <button class="btn btn-primary" id="testApi">Test Connection / ทดสอบ</button>
       </div>
-      <div id="lineTestResult"></div>
+      <div id="apiStatus" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
     <!-- Section 1b: Pollinations AI -->

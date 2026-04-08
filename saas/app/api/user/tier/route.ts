@@ -1,4 +1,7 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
+import { authenticateRequest } from '@/lib/auth'
 import { getTierLimits, type UserTier } from '@/lib/tiers'
 
 interface TierResponse {
@@ -13,24 +16,34 @@ interface TierRow {
   tier_expires_at: string | null
 }
 
-export async function GET(_request: Request): Promise<Response> {
-  const supabase = await createClient()
+export async function GET(request: Request): Promise<Response> {
+  const tokenAuth = await authenticateRequest(request)
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let userId: string
+  let queryClient: SupabaseClient
 
-  if (!user) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: { 'content-type': 'application/json' },
-    })
+  if (tokenAuth) {
+    userId = tokenAuth.userId
+    queryClient = createServiceClient()
+  } else {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    userId = user.id
+    queryClient = supabase
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await queryClient
     .from('users')
     .select('tier, tier_expires_at')
-    .eq('id', user.id)
+    .eq('id', userId)
     .maybeSingle<TierRow>()
 
   const now = Date.now()

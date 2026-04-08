@@ -1,6 +1,35 @@
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { getTierLimits, type UserTier } from '@/lib/tiers'
 import PairingSection from './PairingSection'
+import TokensSection, { type TokenRow } from './TokensSection'
+
+interface ApiTokenDbRow {
+  id: string
+  label: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+async function loadTokens(userId: string): Promise<TokenRow[]> {
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('api_tokens')
+    .select('id, label, created_at, last_used_at, revoked_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .returns<ApiTokenDbRow[]>()
+
+  if (error || !data) return []
+  return data.map((row) => ({
+    id: row.id,
+    label: row.label,
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at,
+    revoked: row.revoked_at != null,
+  }))
+}
 
 interface TierRow {
   tier: UserTier | null
@@ -47,6 +76,12 @@ export default async function DashboardPage() {
   const limits = getTierLimits(tier)
   const color = TIER_COLORS[tier]
 
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const tokens: TokenRow[] = user ? await loadTokens(user.id) : []
+
   return (
     <main style={{ maxWidth: 640, margin: '40px auto', padding: 24 }}>
       <h1>Dashboard</h1>
@@ -87,6 +122,7 @@ export default async function DashboardPage() {
       </section>
 
       <PairingSection />
+      <TokensSection initialTokens={tokens} />
     </main>
   )
 }

@@ -511,32 +511,40 @@ Scoring rules:
   }
 }
 
-// ─── LINE helpers ─────────────────────────────────────────────────────────────
+// ─── SaaS LINE relay ──────────────────────────────────────────────────────────
 
-async function lineCredentials() {
-  const { lineToken, lineUserId } = await chrome.storage.local.get(['lineToken', 'lineUserId']);
-  return (lineToken && lineUserId) ? { lineToken, lineUserId } : null;
+async function sendViaSaas(text, imageUrl) {
+  const { config } = await chrome.storage.local.get('config');
+  const apiBase = (config?.apiBase ?? 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+  const apiToken = config?.apiToken;
+  if (!apiToken) {
+    console.warn('[LiveWatch] no apiToken — LINE alert skipped (configure in Settings)');
+    return { ok: false, error: 'not_connected' };
+  }
+  try {
+    const res = await fetch(`${apiBase}/api/line/send`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, imageUrl }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => String(res.status));
+      console.warn('[LiveWatch] SaaS LINE send failed:', res.status, detail);
+      return { ok: false, error: detail };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.warn('[LiveWatch] SaaS LINE network error:', e);
+    return { ok: false, error: String(e) };
+  }
 }
 
 async function sendLineMessage(text) {
-  const creds = await lineCredentials();
-  if (!creds) {
-    log.warn('[LiveWatch] LINE credentials not configured, skipping');
-    return false;
-  }
-  const res = await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${creds.lineToken}`,
-    },
-    body: JSON.stringify({ to: creds.lineUserId, messages: [{ type: 'text', text }] }),
-  });
-  if (!res.ok) {
-    log.error('[LiveWatch] LINE push failed:', res.status, await res.text());
-    return false;
-  }
-  return true;
+  const result = await sendViaSaas(text, null);
+  return result.ok;
 }
 
 async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
@@ -571,49 +579,13 @@ async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
     lines.push(``, `💬 ${scores.activity_summary}`);
   }
 
-  const creds = await lineCredentials();
-  if (!creds) return;
-
-  // Build messages array: image first (if available), then text
-  const messages = [];
-
-  if (thumbnailUrl) {
-    messages.push({
-      type: 'image',
-      originalContentUrl: thumbnailUrl,
-      previewImageUrl:    thumbnailUrl,
-    });
-  }
-
-  messages.push({ type: 'text', text: lines.join('\n') });
-
-  const res = await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${creds.lineToken}`,
-    },
-    body: JSON.stringify({ to: creds.lineUserId, messages }),
-  });
-
-  if (!res.ok) {
-    log.error('[LiveWatch] sendCaptureAlert LINE failed:', res.status, await res.text());
-  }
+  await sendViaSaas(lines.join('\n'), thumbnailUrl ?? null);
 }
 
 // ─── LINE daily summary ───────────────────────────────────────────────────────
 
 async function sendDailySummary() {
   try {
-    const { lineToken, lineUserId } = await chrome.storage.local.get([
-      'lineToken',
-      'lineUserId',
-    ]);
-    if (!lineToken || !lineUserId) {
-      log.warn('[LiveWatch] sendDailySummary: LINE credentials not configured');
-      return;
-    }
-
     const today = new Date().toISOString().split('T')[0];
 
     const { data: logs, error: logsErr } = await supabaseSelect('analysis_logs', {
@@ -695,9 +667,6 @@ async function sendDailySummary() {
 
 async function sendHourlyReport() {
   try {
-    const creds = await lineCredentials();
-    if (!creds) return;
-
     const { recentCaptures = [] } = await chrome.storage.local.get('recentCaptures');
 
     // Filter captures from the last hour
@@ -746,34 +715,14 @@ async function sendHourlyReport() {
       `🔍 วิเคราะห์ ${count} ครั้ง`,
     ].filter(Boolean).join('\n');
 
-    // Collect unique thumbnail URLs (skip nulls, max 4 images per LINE push)
+    // Collect unique thumbnail URLs (skip nulls); use first as image
     const imageUrls = [...new Set(
       hourly.map(c => c.thumbnail_url).filter(Boolean)
-    )].slice(0, 4);
+    )];
 
-    // Build messages: images first, then summary text (LINE max 5 per push)
-    const messages = [
-      ...imageUrls.map(url => ({
-        type: 'image',
-        originalContentUrl: url,
-        previewImageUrl:    url,
-      })),
-      { type: 'text', text: summary },
-    ];
-
-    const res = await fetch('https://api.line.me/v2/bot/message/push', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${creds.lineToken}`,
-      },
-      body: JSON.stringify({ to: creds.lineUserId, messages }),
-    });
-
-    if (res.ok) {
-      log.info(`[LiveWatch] Hourly LINE report sent (${count} captures, ${imageUrls.length} images)`);
-    } else {
-      log.error('[LiveWatch] Hourly LINE report failed:', res.status, await res.text());
+    const result = await sendViaSaas(summary, imageUrls[0] ?? null);
+    if (result.ok) {
+      log.info(`[LiveWatch] Hourly report sent via SaaS (${count} captures)`);
     }
   } catch (e) {
     log.error('[LiveWatch] sendHourlyReport error:', e);
@@ -1470,6 +1419,17 @@ chrome.runtime.onInstalled.addListener((details) => {
   // On update, purge any stale implicit-flow OAuth token from previous versions.
   if (details?.reason === 'update') {
     chrome.storage.local.remove(['googleOAuthToken', 'driveFolderId']).catch(() => {});
+    // Detect legacy LINE config and nudge user to reconnect via SaaS
+    chrome.storage.local.get(['config', 'lineToken', 'lineUserId']).then((items) => {
+      const cfg = items.config ?? {};
+      if (cfg.lineToken || cfg.lineUserId || items.lineToken || items.lineUserId) {
+        console.warn('[LiveWatch] legacy LINE config detected — please connect via Settings → LiveWatch Account');
+        try {
+          chrome.action.setBadgeText({ text: 'CFG' });
+          chrome.action.setBadgeBackgroundColor({ color: '#FFA500' });
+        } catch (_) {}
+      }
+    }).catch(() => {});
   }
   // On first install, open the consent/onboarding page.
   if (details?.reason === 'install') {
