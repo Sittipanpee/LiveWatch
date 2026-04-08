@@ -1,6 +1,6 @@
 'use client'
-
 import { useCallback, useEffect, useState } from 'react'
+import { Card, Button, Alert } from '@/components/ui'
 
 interface PairingStatus {
   pairingCode: string | null
@@ -20,7 +20,7 @@ export default function PairingSection() {
     try {
       const res = await fetch('/api/pairing/status', { cache: 'no-store' })
       if (!res.ok) {
-        setError('โหลดสถานะไม่สำเร็จ / Failed to load pairing status')
+        setError('โหลดสถานะไม่สำเร็จ')
         return
       }
       setStatus((await res.json()) as PairingStatus)
@@ -39,7 +39,7 @@ export default function PairingSection() {
     try {
       const res = await fetch('/api/pairing/regenerate', { method: 'POST' })
       if (!res.ok) {
-        setError('สร้างรหัสไม่สำเร็จ / Failed to regenerate code')
+        setError('สร้างรหัสไม่สำเร็จ')
         return
       }
       await load()
@@ -50,126 +50,79 @@ export default function PairingSection() {
 
   if (!loaded) {
     return (
-      <section className="card">
-        <h2 style={{ marginTop: 0 }}>
-          เชื่อมต่อ LINE <span className="label-en">/ Connect LINE</span>
+      <Card>
+        <h2 className="text-xl font-semibold mb-2">
+          เชื่อม LINE <span className="text-sm font-normal text-gray-400">/ Connect LINE</span>
         </h2>
-        <p className="muted">กำลังโหลด... / Loading...</p>
-      </section>
+        <p className="text-gray-500">กำลังโหลด...</p>
+      </Card>
     )
   }
 
   return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>
-        เชื่อมต่อ LINE <span className="label-en">/ Connect LINE</span>
+    <Card>
+      <h2 className="text-xl font-semibold mb-4">
+        เชื่อม LINE <span className="text-sm font-normal text-gray-400">/ Connect LINE</span>
       </h2>
-      {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
+      {error ? <Alert variant="danger">{error}</Alert> : null}
 
-      {/* Step 1: Add LINE bot */}
-      <div
-        style={{
-          textAlign: 'center',
-          padding: 20,
-          background: '#F7F9FA',
-          borderRadius: 8,
-          marginBottom: 16,
-        }}
-      >
-        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>ขั้นที่ 1: เพิ่มเพื่อนใน LINE</h3>
-        <p className="muted" style={{ margin: '0 0 12px' }}>
-          Step 1: Add LiveWatch Bot as friend
-        </p>
+      <div className="rounded-2xl bg-gray-50 p-6 text-center mb-4">
+        <h3 className="font-semibold">ขั้นที่ 1: เพิ่มเพื่อนใน LINE</h3>
+        <p className="text-xs text-gray-500 mb-4">Add LiveWatch Bot as friend</p>
         <img
           src="https://qr-official.line.me/gs/M_imz5326s_GW.png"
           alt="LINE Bot QR Code"
-          style={{ width: 180, height: 180, margin: '0 auto', display: 'block' }}
+          className="w-44 h-44 mx-auto mb-4 rounded-xl bg-white p-2"
         />
         <a
           href="https://lin.ee/zieAzkw"
           target="_blank"
           rel="noopener noreferrer"
-          className="btn-line"
-          style={{ marginTop: 12 }}
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#06C755] text-white font-semibold hover:bg-[#05a649] transition"
         >
-          📱 เปิดใน LINE (Add Friend)
+          📱 เปิดใน LINE
         </a>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-          สแกน QR หรือกดปุ่มด้านบน / Scan QR or tap the button
-        </p>
+        <p className="text-xs text-gray-400 mt-3">สแกน QR หรือกดปุ่มด้านบน</p>
       </div>
 
-      {/* Step 2: pairing code */}
       <div>
-        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>ขั้นที่ 2: ส่งรหัสนี้ไปยัง Bot</h3>
-        <p className="muted" style={{ margin: '0 0 12px' }}>
-          Step 2: Send this code to the bot
-        </p>
+        <h3 className="font-semibold mb-2">ขั้นที่ 2: ส่งรหัสนี้ไปยัง Bot</h3>
         {status?.linePaired ? (
-          <div
-            style={{
-              padding: 16,
-              background: '#F0F9F4',
-              border: '1px solid #06C755',
-              borderRadius: 8,
-            }}
-          >
-            <p style={{ margin: 0, color: '#06C755', fontWeight: 'bold' }}>
-              ✅ เชื่อมต่อ LINE สำเร็จแล้ว
-            </p>
-            <p className="muted" style={{ margin: '4px 0 0' }}>
-              Paired {status.pairedAt ? new Date(status.pairedAt).toLocaleString() : ''}
-            </p>
-          </div>
+          <Alert variant="success">
+            <div>
+              <p className="font-semibold">เชื่อมต่อ LINE สำเร็จแล้ว</p>
+              {status.pairedAt ? (
+                <p className="text-xs mt-1 opacity-80">
+                  Paired {new Date(status.pairedAt).toLocaleString('th-TH')}
+                </p>
+              ) : null}
+            </div>
+          </Alert>
         ) : (
           <>
             {status?.pairingCode ? (
-              <div
-                style={{
-                  padding: 16,
-                  background: '#FFF9E6',
-                  border: '1px dashed #D4AF37',
-                  borderRadius: 8,
-                  textAlign: 'center',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 28,
-                    fontWeight: 'bold',
-                    letterSpacing: 2,
-                    fontFamily: 'monospace',
-                  }}
-                >
+              <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-6 text-center">
+                <div className="text-3xl font-bold font-mono tracking-widest">
                   {status.pairingCode}
                 </div>
-                <p className="muted" style={{ marginTop: 8 }}>
+                <p className="text-xs text-gray-500 mt-2">
                   พิมพ์รหัสนี้ใน LINE chat ที่เปิดกับ bot
                 </p>
                 {status.pairingCodeExpiresAt ? (
-                  <p className="muted" style={{ fontSize: 12 }}>
-                    หมดอายุ / Expires{' '}
-                    {new Date(status.pairingCodeExpiresAt).toLocaleString()}
+                  <p className="text-xs text-gray-400 mt-1">
+                    หมดอายุ {new Date(status.pairingCodeExpiresAt).toLocaleString('th-TH')}
                   </p>
                 ) : null}
               </div>
             ) : (
-              <p className="muted">
-                ยังไม่มีรหัส คลิกปุ่มด้านล่างเพื่อสร้าง / No code yet — click below to generate
-              </p>
+              <p className="text-sm text-gray-500">ยังไม่มีรหัส — คลิกปุ่มด้านล่างเพื่อสร้าง</p>
             )}
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={regenerate}
-              disabled={busy}
-              style={{ marginTop: 12 }}
-            >
-              {busy ? 'กำลังสร้าง...' : 'สร้างรหัสใหม่ / Generate new code'}
-            </button>
+            <Button variant="secondary" onClick={regenerate} disabled={busy} className="mt-4">
+              {busy ? 'กำลังสร้าง...' : 'สร้างรหัสใหม่'}
+            </Button>
           </>
         )}
       </div>
-    </section>
+    </Card>
   )
 }

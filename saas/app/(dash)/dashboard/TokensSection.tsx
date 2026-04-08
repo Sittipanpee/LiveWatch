@@ -1,21 +1,6 @@
 'use client'
-
 import { useCallback, useEffect, useState } from 'react'
-
-interface ChromeRuntimeSendMessageResponse {
-  ok?: boolean
-  error?: string
-}
-
-interface ChromeRuntimeApi {
-  runtime?: {
-    sendMessage: (
-      extId: string,
-      msg: { type: string; token: string; apiBase: string },
-      callback: (resp: ChromeRuntimeSendMessageResponse | undefined) => void,
-    ) => void
-  }
-}
+import { Card, Button, Alert } from '@/components/ui'
 
 export interface TokenRow {
   id: string
@@ -25,86 +10,72 @@ export interface TokenRow {
   revoked: boolean
 }
 
-interface TokensSectionProps {
-  initialTokens: TokenRow[]
-}
-
 interface GenerateResponse {
   token: string
   label: string
   createdAt: string
-  warning: string
+  warning?: string
 }
 
 interface ListResponse {
   tokens: TokenRow[]
 }
 
-export default function TokensSection({ initialTokens }: TokensSectionProps) {
+interface SendResponse {
+  ok?: boolean
+  error?: string
+}
+
+interface ChromeRuntimeApi {
+  runtime?: {
+    sendMessage: (
+      extId: string,
+      msg: { type: string; token: string; apiBase: string },
+      callback: (resp: SendResponse | undefined) => void,
+    ) => void
+  }
+}
+
+interface Props {
+  initialTokens: TokenRow[]
+}
+
+export default function TokensSection({ initialTokens }: Props) {
   const [tokens, setTokens] = useState<TokenRow[]>(initialTokens)
-  const [label, setLabel] = useState<string>('Chrome Extension')
+  const [plaintext, setPlaintext] = useState<string | null>(null)
   const [busy, setBusy] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
-  const [plaintext, setPlaintext] = useState<string | null>(null)
-  const [copied, setCopied] = useState<boolean>(false)
-  const [extId, setExtId] = useState<string | null>(null)
   const [sendStatus, setSendStatus] = useState<string | null>(null)
+  const [extId, setExtId] = useState<string | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
 
   useEffect(() => {
     setExtId(sessionStorage.getItem('lw_extId'))
   }, [])
 
-  const sendToExtension = (token: string): void => {
-    const apiBase = window.location.origin
-    try {
-      const chromeApi = (window as unknown as { chrome?: ChromeRuntimeApi }).chrome
-      if (!chromeApi?.runtime?.sendMessage || !extId) {
-        setSendStatus('ไม่พบ Chrome Extension กรุณาคัดลอก token ด้วยตนเอง / Extension not detected — copy manually.')
-        return
-      }
-      chromeApi.runtime.sendMessage(
-        extId,
-        { type: 'SET_API_TOKEN', token, apiBase },
-        (response) => {
-          if (response?.ok) {
-            setSendStatus(
-              '✅ ส่งไปยัง Extension สำเร็จ! ปิดหน้านี้และกลับไปที่ Chrome / Sent! Close this tab and return to Chrome.',
-            )
-          } else {
-            setSendStatus(
-              `${response?.error ?? 'Failed to reach extension'} — กรุณาคัดลอกด้วยตนเอง / Copy manually.`,
-            )
-          }
-        },
-      )
-    } catch (e) {
-      setSendStatus(`${e instanceof Error ? e.message : 'unknown error'} — กรุณาคัดลอกด้วยตนเอง.`)
-    }
-  }
-
   const refresh = useCallback(async (): Promise<void> => {
     const res = await fetch('/api/tokens/list', { cache: 'no-store' })
     if (!res.ok) return
     const body = (await res.json()) as ListResponse
-    setTokens(body.tokens)
+    setTokens(body.tokens ?? [])
   }, [])
 
   async function generate(): Promise<void> {
     setBusy(true)
     setError(null)
-    setCopied(false)
+    setSendStatus(null)
     try {
       const res = await fetch('/api/tokens/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ label }),
+        body: JSON.stringify({ label: 'Chrome Extension' }),
       })
       if (!res.ok) {
-        setError('สร้าง token ไม่สำเร็จ / Failed to generate token')
+        setError('เชื่อมต่อไม่สำเร็จ')
         return
       }
-      const body = (await res.json()) as GenerateResponse
-      setPlaintext(body.token)
+      const data = (await res.json()) as GenerateResponse
+      setPlaintext(data.token)
       await refresh()
     } finally {
       setBusy(false)
@@ -112,190 +83,180 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
   }
 
   async function revoke(id: string): Promise<void> {
-    if (!confirm('ยกเลิก token นี้? Extension ที่ใช้อยู่จะหยุดทำงาน / Revoke this token?')) return
+    if (!confirm('ยกเลิกการเชื่อมต่อนี้?')) return
     setBusy(true)
-    setError(null)
     try {
       const res = await fetch('/api/tokens/revoke', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id }),
       })
-      if (!res.ok) {
-        setError('ยกเลิกไม่สำเร็จ / Failed to revoke token')
-        return
-      }
-      await refresh()
+      if (res.ok) await refresh()
     } finally {
       setBusy(false)
     }
   }
 
-  async function copy(): Promise<void> {
-    if (!plaintext) return
-    await navigator.clipboard.writeText(plaintext)
-    setCopied(true)
+  function sendToExtension(token: string): void {
+    if (!extId) {
+      setSendStatus('❌ เปิดหน้านี้จาก Extension Settings เพื่อส่งอัตโนมัติ')
+      return
+    }
+    const apiBase = window.location.origin
+    try {
+      const chromeApi = (window as unknown as { chrome?: ChromeRuntimeApi }).chrome
+      if (!chromeApi?.runtime?.sendMessage) {
+        setSendStatus('❌ ไม่พบ Chrome Extension — กรุณาคัดลอกด้วยมือ')
+        return
+      }
+      chromeApi.runtime.sendMessage(
+        extId,
+        { type: 'SET_API_TOKEN', token, apiBase },
+        (response) => {
+          if (response?.ok) {
+            setSendStatus('✅ ส่งเข้า Extension สำเร็จ — ปิดหน้านี้และกลับไปที่ Chrome ได้เลย')
+          } else {
+            setSendStatus(
+              `❌ ${response?.error ?? 'ไม่สามารถส่งเข้า Extension'} — กรุณาคัดลอกด้วยมือ`,
+            )
+          }
+        },
+      )
+    } catch (e) {
+      setSendStatus(`❌ ${e instanceof Error ? e.message : 'unknown error'}`)
+    }
   }
 
-  function dismissPlaintext(): void {
-    setPlaintext(null)
-    setCopied(false)
+  function copyPlaintext(): void {
+    if (!plaintext) return
+    void navigator.clipboard.writeText(plaintext)
+    setSendStatus('📋 คัดลอกแล้ว')
   }
+
+  const activeCount = tokens.filter((tk) => !tk.revoked).length
+  const isConnected = activeCount > 0
 
   return (
-    <section className="card">
-      <h2 style={{ marginTop: 0 }}>
-        เชื่อมต่อ Chrome Extension <span className="label-en">/ Chrome Extension Connection</span>
+    <Card>
+      <h2 className="text-xl font-semibold mb-4">
+        เชื่อม Chrome Extension{' '}
+        <span className="text-sm font-normal text-gray-400">/ Connect extension</span>
       </h2>
-      <p className="muted">
-        สร้าง API token เพื่อเชื่อมต่อ LiveWatch Chrome extension กับบัญชีของคุณ
-      </p>
 
-      {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
-
-      {plaintext ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 16,
-            background: '#FFF9E6',
-            border: '2px solid #D4AF37',
-            borderRadius: 8,
-          }}
-        >
-          <strong style={{ color: '#8a6d00' }}>
-            ⚠️ บันทึก token นี้ไว้ตอนนี้ — ระบบจะไม่แสดงอีก / Save now — cannot be retrieved later
-          </strong>
-          <pre
-            style={{
-              marginTop: 10,
-              padding: 10,
-              background: '#fff',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontSize: 13,
-              wordBreak: 'break-all',
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'monospace',
-            }}
-          >
-            {plaintext}
-          </pre>
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {extId ? (
-              <button
-                type="button"
-                onClick={() => sendToExtension(plaintext)}
-                className="btn-primary"
-                style={{ fontSize: 16, padding: '14px 22px' }}
-              >
-                📤 ส่งไปยัง Extension
-              </button>
-            ) : null}
-            <button type="button" onClick={copy} className="btn-secondary">
-              {copied ? '✅ คัดลอกแล้ว / Copied!' : '📋 คัดลอก / Copy'}
-            </button>
-            <button
-              type="button"
-              onClick={dismissPlaintext}
-              className="btn-secondary"
-            >
-              บันทึกแล้ว / I have saved it
-            </button>
+      {isConnected && !plaintext ? (
+        <Alert variant="success">
+          <div>
+            <p className="font-semibold">เชื่อม Extension แล้ว</p>
+            <p className="text-xs mt-1">
+              คุณสามารถใช้งาน Extension ได้แล้ว ({activeCount} การเชื่อมต่อที่ใช้งานอยู่)
+            </p>
           </div>
-          {sendStatus ? (
-            <p style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>{sendStatus}</p>
-          ) : null}
+        </Alert>
+      ) : null}
+
+      {!isConnected && !plaintext ? (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            คลิกปุ่มด้านล่างเพื่อเชื่อม Chrome Extension กับบัญชีของคุณ
+          </p>
+          <Button variant="primary" size="lg" onClick={generate} disabled={busy}>
+            {busy ? 'กำลังเชื่อม...' : '🔗 เชื่อม Chrome Extension'}
+          </Button>
           {!extId ? (
-            <p className="muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-              เปิดหน้านี้จาก Extension Settings เพื่อเปิดใช้งานการส่งอัตโนมัติ / Open from the
-              Chrome extension Settings to enable direct send.
+            <p className="text-xs text-amber-600">
+              ⚠ เปิดหน้านี้จาก Extension Settings เพื่อให้ระบบส่งให้อัตโนมัติ
             </p>
           ) : null}
+          {error ? <Alert variant="danger">{error}</Alert> : null}
         </div>
-      ) : (
-        <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="ชื่อ (เช่น My laptop) / Label"
-            style={{ flex: 1 }}
-          />
-          <button
-            type="button"
-            onClick={generate}
-            disabled={busy}
-            className="btn-primary"
-          >
-            {busy ? '...' : 'สร้าง Token ใหม่ / Generate new token'}
-          </button>
-        </div>
-      )}
+      ) : null}
 
-      <table style={{ width: '100%', marginTop: 20, borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
-            <th style={{ padding: '8px 6px' }}>
-              ชื่อ <span className="label-en">/ Label</span>
-            </th>
-            <th style={{ padding: '8px 6px' }}>
-              สร้างเมื่อ <span className="label-en">/ Created</span>
-            </th>
-            <th style={{ padding: '8px 6px' }}>
-              ใช้ล่าสุด <span className="label-en">/ Last used</span>
-            </th>
-            <th style={{ padding: '8px 6px' }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokens.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="muted" style={{ padding: 12, textAlign: 'center' }}>
-                ยังไม่มี token / No tokens yet.
-              </td>
-            </tr>
-          ) : (
-            tokens.map((t) => (
-              <tr
-                key={t.id}
-                style={{
-                  borderBottom: '1px solid var(--border)',
-                  opacity: t.revoked ? 0.5 : 1,
-                }}
+      {plaintext ? (
+        <div className="rounded-2xl border-2 border-accent bg-accent-50 p-5 space-y-3 mt-4">
+          <Alert variant="warning">⚠️ บันทึกตอนนี้ — ระบบจะไม่แสดงรหัสนี้อีก</Alert>
+          <div className="font-mono text-xs break-all bg-white p-3 rounded-xl border border-gray-200">
+            {plaintext}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {extId ? (
+              <Button
+                variant="primary"
+                onClick={() => sendToExtension(plaintext)}
+                className="flex-1 min-w-[200px]"
               >
-                <td style={{ padding: '10px 6px', fontWeight: 600 }}>
-                  {t.label}
-                  {t.revoked ? (
-                    <span style={{ color: 'crimson', marginLeft: 8, fontSize: 11 }}>
-                      ยกเลิกแล้ว
-                    </span>
-                  ) : null}
-                </td>
-                <td style={{ padding: '10px 6px', color: 'var(--text-muted)' }}>
-                  {new Date(t.createdAt).toLocaleString()}
-                </td>
-                <td style={{ padding: '10px 6px', color: 'var(--text-muted)' }}>
-                  {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString() : '—'}
-                </td>
-                <td style={{ padding: '10px 6px', textAlign: 'right' }}>
-                  {!t.revoked ? (
-                    <button
-                      type="button"
-                      onClick={() => void revoke(t.id)}
+                📤 ส่งไปยัง Extension
+              </Button>
+            ) : null}
+            <Button variant="secondary" onClick={copyPlaintext}>
+              📋 คัดลอก
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPlaintext(null)
+                setSendStatus(null)
+              }}
+            >
+              ปิด
+            </Button>
+          </div>
+          {sendStatus ? <p className="text-sm">{sendStatus}</p> : null}
+        </div>
+      ) : null}
+
+      <div className="mt-6 pt-6 border-t border-gray-200">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-xs text-gray-500 hover:text-brand"
+        >
+          {showAdvanced ? '▼' : '▶'} จัดการแบบขั้นสูง
+        </button>
+        {showAdvanced ? (
+          <div className="mt-4 space-y-2">
+            {tokens.length === 0 ? (
+              <p className="text-xs text-gray-500">ยังไม่มีการเชื่อมต่อ</p>
+            ) : (
+              tokens.map((tk) => (
+                <div
+                  key={tk.id}
+                  className="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-0"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{tk.label}</div>
+                    <div className="text-xs text-gray-500">
+                      {tk.revoked ? 'ยกเลิกแล้ว' : 'ใช้งานอยู่'} • สร้างเมื่อ{' '}
+                      {new Date(tk.createdAt).toLocaleDateString('th-TH')}
+                      {tk.lastUsedAt
+                        ? ` • ใช้ล่าสุด ${new Date(tk.lastUsedAt).toLocaleDateString('th-TH')}`
+                        : ''}
+                    </div>
+                  </div>
+                  {!tk.revoked ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void revoke(tk.id)}
                       disabled={busy}
-                      className="btn-secondary"
-                      style={{ padding: '6px 12px', fontSize: 12 }}
                     >
-                      ยกเลิก / Revoke
-                    </button>
+                      ยกเลิก
+                    </Button>
                   ) : null}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </section>
+                </div>
+              ))
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={generate}
+              disabled={busy}
+              className="mt-2"
+            >
+              สร้างการเชื่อมต่อใหม่
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </Card>
   )
 }

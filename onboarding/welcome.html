@@ -8,10 +8,14 @@
 </head>
 <body>
   <main class="card">
+    <div class="lang-toggle" id="langToggle">
+      <button type="button" data-lang="th">TH</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
     <header>
       <div class="brand-bar"></div>
-      <h1>LiveWatch</h1>
-      <p class="tagline">ผู้ช่วย AI สำหรับผู้ขายไลฟ์สด</p>
+      <h1 data-i18n="onboarding.welcome">ยินดีต้อนรับสู่ LiveWatch</h1>
+      <p class="tagline" data-i18n="onboarding.tagline">ผู้ช่วย AI ที่ดูไลฟ์แทนคุณ แจ้งเตือนผ่าน LINE ทันที</p>
     </header>
 
     <section class="intro">
@@ -34,21 +38,21 @@
     <section class="consent">
       <label class="consent-label">
         <input type="checkbox" id="consentCheck" />
-        <span>ฉันยืนยันว่าเป็นเจ้าของบัญชีของไลฟ์ที่จะถูกมอนิเตอร์ และเข้าใจว่าฉันต้องปฏิบัติตามข้อตกลงของแพลตฟอร์มที่ใช้งาน / I confirm I am the account owner of any live streams I monitor and I am responsible for complying with the Terms of Service of the platform I use.</span>
+        <span data-i18n="onboarding.consentText">ฉันยืนยันว่าเป็นเจ้าของไลฟ์ที่จะถูกมอนิเตอร์ และเข้าใจว่าฉันต้องปฏิบัติตามข้อตกลงของแพลตฟอร์ม</span>
       </label>
     </section>
 
     <div class="actions">
-      <button id="continueBtn" disabled>ดำเนินการต่อ / Continue</button>
+      <button id="continueBtn" disabled data-i18n="onboarding.continue">เริ่มใช้งาน</button>
     </div>
 
     <footer>
-      <a href="https://livewatch-psi.vercel.app/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="https://livewatch-psi.vercel.app/privacy" target="_blank" rel="noopener" data-i18n="onboarding.privacyLink">นโยบายความเป็นส่วนตัว</a>
       <span>·</span>
-      <a href="https://livewatch-psi.vercel.app/terms" target="_blank" rel="noopener">Terms of Service</a>
+      <a href="https://livewatch-psi.vercel.app/terms" target="_blank" rel="noopener" data-i18n="onboarding.termsLink">ข้อตกลง</a>
     </footer>
   </main>
 
-  <script src="welcome.js"></script>
+  <script type="module" src="welcome.js"></script>
 </body>
 </html>

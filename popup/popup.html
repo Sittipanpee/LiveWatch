@@ -256,12 +256,37 @@
     /* ── Test button ── */
     .btn-test {
       width: 100%;
-      padding: 9px 0;
-      background: #009995; color: #fff;
-      border: none; border-radius: 8px;
+      padding: 10px 0;
+      background: #FF6B35; color: #fff;
+      border: none; border-radius: 10px;
       font-size: 13px; font-weight: 700;
       cursor: pointer;
-      transition: opacity .15s;
+      transition: opacity .15s, transform .1s;
+      box-shadow: 0 2px 8px rgba(255, 107, 53, 0.25);
+    }
+    .btn-test:active { transform: scale(.98); }
+    /* ── Language toggle ── */
+    .lang-toggle {
+      display: inline-flex;
+      background: rgba(255,255,255,0.18);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .lang-toggle button {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      cursor: pointer;
+      font-family: inherit;
+      opacity: .65;
+    }
+    .lang-toggle button.active {
+      background: #fff;
+      color: #009995;
+      opacity: 1;
     }
     .btn-test:disabled { opacity: .45; cursor: not-allowed; }
     .btn-test:hover:not(:disabled) { opacity: .85; }
@@ -288,6 +313,10 @@
   <div class="header">
     <span class="header-title">LiveWatch</span>
     <div class="header-right">
+      <div class="lang-toggle" id="langToggle">
+        <button type="button" data-lang="th">TH</button>
+        <button type="button" data-lang="en">EN</button>
+      </div>
       <span id="connStatus" class="conn-status disconnected" title="Not connected">●</span>
       <span id="tierBadge" class="tier-badge">Free</span>
       <span class="version-badge" id="versionBadge"></span>
@@ -301,7 +330,7 @@
   <div class="status-bar">
     <div class="status-left">
       <div class="status-dot gray" id="statusDot"></div>
-      <span class="status-text" id="statusText">ไม่พบไลฟ์</span>
+      <span class="status-text" id="statusText" data-i18n="popup.statusOffline">ไม่พบไลฟ์</span>
     </div>
     <div class="last-time" id="lastCapture">–</div>
   </div>
@@ -345,7 +374,7 @@
 
     <!-- Last analysis result -->
     <div class="card" id="resultCard" style="display:none">
-      <div class="card-title">ผลวิเคราะห์ล่าสุด</div>
+      <div class="card-title" data-i18n="popup.resultTitle">ผลวิเคราะห์ล่าสุด</div>
 
       <div class="score-row">
         <span class="score-label">😊 ยิ้มแย้ม</span>
@@ -393,7 +422,7 @@
 
     <!-- Today's stats -->
     <div class="card" id="statsCard" style="display:none">
-      <div class="card-title">สถิติวันนี้</div>
+      <div class="card-title" data-i18n="popup.statsTitle">สถิติวันนี้</div>
       <div class="stats-grid">
         <div class="stat-cell">
           <div class="stat-num teal" id="statBursts">0</div>
@@ -421,7 +450,7 @@
     </div>
 
     <!-- Test button -->
-    <button class="btn-test" id="btnTest">▶ ทดสอบ Capture ทันที</button>
+    <button class="btn-test" id="btnTest" data-i18n="popup.testCapture">▶ ทดสอบบันทึกทันที</button>
 
     <!-- Capture status log -->
     <div class="capture-log" id="captureLog" style="display:none">
@@ -434,10 +463,10 @@
 
   <!-- Footer -->
   <div class="footer-row">
-    <button class="settings-link" id="settingsLink">⚙ ตั้งค่า</button>
+    <button class="settings-link" id="settingsLink" data-i18n="popup.settings">⚙ ตั้งค่า</button>
     <span class="footer-copy">LiveWatch © 2026</span>
   </div>
 
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

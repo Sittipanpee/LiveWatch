@@ -15,10 +15,37 @@ body {
 .card {
   background: #fff;
   width: 100%;
-  max-width: 600px;
-  border-radius: 14px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-  padding: 36px 40px;
+  max-width: 640px;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 153, 149, 0.12);
+  padding: 44px 48px;
+  position: relative;
+  border-top: 4px solid #009995;
+}
+
+.lang-toggle {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  background: #fff;
+  border: 1.5px solid #009995;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.lang-toggle button {
+  background: none;
+  border: none;
+  color: #009995;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lang-toggle button.active {
+  background: #009995;
+  color: #fff;
 }
 
 header {
@@ -35,10 +62,10 @@ header {
 }
 
 h1 {
-  font-size: 28px;
+  font-size: 34px;
   color: #009995;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 .tagline {
@@ -122,16 +149,17 @@ ul li::before {
 }
 
 #continueBtn {
-  background: #009995;
+  background: #FF6B35;
   color: #fff;
   border: none;
-  border-radius: 10px;
-  padding: 12px 36px;
-  font-size: 14px;
+  border-radius: 12px;
+  padding: 14px 44px;
+  font-size: 15px;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   transition: opacity 0.15s, transform 0.1s;
+  box-shadow: 0 4px 14px rgba(255, 107, 53, 0.3);
 }
 
 #continueBtn:disabled {

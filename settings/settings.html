@@ -237,6 +237,38 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+    /* ---- Language toggle ---- */
+    .lang-toggle {
+      display: inline-flex;
+      background: #fff;
+      border: 1.5px solid #009995;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-left: auto;
+    }
+    .lang-toggle button {
+      background: none;
+      border: none;
+      color: #009995;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .lang-toggle button.active {
+      background: #009995;
+      color: #fff;
+    }
+
+    .btn-primary {
+      background: #FF6B35 !important;
+      color: #fff !important;
+    }
+    .btn-save {
+      background: #FF6B35 !important;
+    }
   </style>
 </head>
 <body>
@@ -246,18 +278,22 @@
     <div class="page-header">
       <div class="page-header-bar"></div>
       <div>
-        <h1>ตั้งค่า LiveWatch</h1>
+        <h1 data-i18n="settings.title">ตั้งค่า LiveWatch</h1>
         <p>LiveWatch Settings</p>
+      </div>
+      <div class="lang-toggle" id="langToggle">
+        <button type="button" data-lang="th">TH</button>
+        <button type="button" data-lang="en">EN</button>
       </div>
     </div>
 
     <!-- Section 1: Connect LiveWatch Account -->
     <div class="card">
-      <div class="section-title">เชื่อมต่อบัญชี LiveWatch / Connect LiveWatch Account</div>
+      <div class="section-title" data-i18n="settings.accountSection">เชื่อมต่อบัญชี LiveWatch</div>
 
       <div class="connect-actions" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <button id="btnSignUp" type="button" class="btn btn-primary">📝 สมัคร / Sign Up</button>
-        <button id="btnOpenDashboard" type="button" class="btn btn-outline">🔑 ฉันมี Token แล้ว / Get Token</button>
+        <button id="btnSignUp" type="button" class="btn btn-primary" data-i18n="settings.signUp">สมัครใช้งาน</button>
+        <button id="btnOpenDashboard" type="button" class="btn btn-outline" data-i18n="settings.getToken">ไปยัง Dashboard</button>
       </div>
       <p class="helper-text" style="font-size:13px;color:#666;margin-bottom:12px;">
         คลิกสมัคร → สมัครในเว็บ → Generate Token → คลิก "Send to Extension" → เสร็จ ไม่ต้องคัดลอก<br/>
@@ -269,24 +305,24 @@
       </div>
 
       <div class="field">
-        <label for="apiBase">API Base URL</label>
+        <label for="apiBase" data-i18n="settings.apiBaseLabel">ที่อยู่เซิร์ฟเวอร์</label>
         <input type="text" id="apiBase" value="https://livewatch-psi.vercel.app" autocomplete="off" spellcheck="false" />
       </div>
 
       <div class="field">
-        <label for="apiToken">API Token</label>
+        <label for="apiToken" data-i18n="settings.apiTokenLabel">รหัสเชื่อมต่อ</label>
         <input type="password" id="apiToken" placeholder="lw_..." autocomplete="off" spellcheck="false" />
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="testApi">Test Connection / ทดสอบ</button>
+        <button class="btn btn-primary" id="testApi" data-i18n="settings.testBtn">ทดสอบการเชื่อมต่อ</button>
       </div>
       <div id="apiStatus" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
     <!-- Section 2b: Google Sheets -->
     <div class="card">
-      <div class="section-title">Google Sheets (ทางเลือกแทน Supabase)</div>
+      <div class="section-title" data-i18n="settings.sheetsSection">สำรองใน Google Sheets (ทางเลือก)</div>
 
       <div class="field">
         <p style="font-size:13px;color:#374151;margin-bottom:10px;">
@@ -294,8 +330,8 @@
         </p>
 
         <div class="btn-row" style="margin-top:0;">
-          <button class="btn btn-outline" id="btn-sheets-connect">เชื่อมต่อ Google Sheets</button>
-          <button class="btn btn-outline" id="btn-sheets-disconnect" style="display:none;color:#dc2626;border-color:#dc2626;">ยกเลิกการเชื่อมต่อ</button>
+          <button class="btn btn-outline" id="btn-sheets-connect" data-i18n="settings.connectSheets">เชื่อม Google Sheets</button>
+          <button class="btn btn-outline" id="btn-sheets-disconnect" data-i18n="settings.disconnectSheets" style="display:none;color:#dc2626;border-color:#dc2626;">ยกเลิกการเชื่อม</button>
         </div>
       </div>
 
@@ -316,10 +352,10 @@
 
     <!-- Section 3: Schedule -->
     <div class="card">
-      <div class="section-title">การตั้งเวลา</div>
+      <div class="section-title" data-i18n="settings.scheduling">การตั้งเวลา</div>
 
       <div class="field">
-        <label for="captureInterval">บันทึกภาพทุก (นาที)</label>
+        <label for="captureInterval" data-i18n="settings.captureIntervalLabel">บันทึกภาพทุก (นาที)</label>
         <div class="range-row">
           <input type="range" id="captureInterval" min="6" max="15" step="1" value="8" />
           <span class="range-value" id="captureIntervalDisplay">8</span>
@@ -328,7 +364,7 @@
       </div>
 
       <div class="field">
-        <label for="summaryHour">ส่งสรุปทาง LINE เวลา</label>
+        <label for="summaryHour" data-i18n="settings.summaryHourLabel">ส่งสรุปรายวันเวลา</label>
         <select id="summaryHour">
           <option value="20">20:00 น.</option>
           <option value="21">21:00 น.</option>
@@ -341,12 +377,12 @@
 
     <!-- Save -->
     <div class="save-bar">
-      <button class="btn btn-primary btn-save" id="saveBtn">บันทึกการตั้งค่า</button>
+      <button class="btn btn-primary btn-save" id="saveBtn" data-i18n="settings.saveBtn">บันทึกการตั้งค่า</button>
     </div>
 
     <!-- Section: Privacy -->
     <div class="card" style="margin-top:28px;background:#f0fafa;border:1.5px solid #99d6d5;">
-      <div class="section-title" style="color:#007c7a;">ข้อมูลความเป็นส่วนตัว</div>
+      <div class="section-title" style="color:#007c7a;" data-i18n="settings.privacy">ความเป็นส่วนตัว</div>
       <p style="font-size:12px;color:#374151;line-height:1.8;">
         ข้อมูลที่ Extension นี้เก็บและส่ง:
       </p>
@@ -364,14 +400,14 @@
 
     <!-- Section: Update -->
     <div class="card" style="margin-top:20px;">
-      <div class="section-title">อัพเดตระบบ</div>
+      <div class="section-title" data-i18n="settings.update">อัปเดตระบบ</div>
 
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
           <div style="font-size:13px;color:#374151;">เวอร์ชันปัจจุบัน: <strong id="currentVersion">—</strong></div>
           <div style="font-size:11px;color:#9ca3af;margin-top:3px;" id="lastCheckedLabel"></div>
         </div>
-        <button class="btn btn-outline" id="checkUpdateBtn">ตรวจสอบอัพเดต</button>
+        <button class="btn btn-outline" id="checkUpdateBtn" data-i18n="settings.checkUpdate">ตรวจสอบอัปเดต</button>
       </div>
 
       <div id="updateStatus" style="margin-top:14px;display:none;"></div>
@@ -382,6 +418,6 @@
   <!-- Toast -->
   <div id="toast"></div>
 
-  <script src="settings.js"></script>
+  <script type="module" src="settings.js"></script>
 </body>
 </html>

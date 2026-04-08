@@ -1,5 +1,7 @@
 'use strict';
 
+import { getLocale, setLocale, applyI18n } from '../src/i18n.js';
+
 // ---------------------------------------------------------------------------
 // Storage keys
 // ---------------------------------------------------------------------------
@@ -678,7 +680,28 @@ async function checkForUpdates() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initLangToggle(currentLocale) {
+  const wrap = document.getElementById('langToggle');
+  if (!wrap) return;
+  const btns = wrap.querySelectorAll('button[data-lang]');
+  const updateActive = (loc) => {
+    btns.forEach((b) => b.classList.toggle('active', b.dataset.lang === loc));
+  };
+  updateActive(currentLocale);
+  btns.forEach((b) => {
+    b.addEventListener('click', async () => {
+      const loc = b.dataset.lang === 'en' ? 'en' : 'th';
+      await setLocale(loc);
+      applyI18n(document, loc);
+      updateActive(loc);
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const locale = await getLocale();
+  applyI18n(document, locale);
+  initLangToggle(locale);
   loadSettings();
   loadApiConfig();
   initSheetsSection();
