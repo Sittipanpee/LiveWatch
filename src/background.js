@@ -20,6 +20,7 @@ import {
 import { finalizeSession } from './session_summary.js';
 import { getAuthToken, revokeAuthToken, sheetsAppend, getOrCreateDriveFolder, uploadFrameToDrive } from './sheets.js';
 import { TIER_LIMITS, getCachedTier, refreshTierCache, effectiveCaptureInterval } from './tier.js';
+import { analyzeFrames } from './ai.js';
 
 // ─── Logger (debug logs suppressed in production) ────────────────────────────
 
@@ -372,144 +373,7 @@ async function sheetsWrite(table, row) {
   }
 }
 
-// ─── Pollinations vision analysis ─────────────────────────────────────────────
-
-async function analyzeFrames(frames, meta) {
-  const now = new Date().toISOString();
-  try {
-    const validFrames = frames.filter(Boolean);
-    if (validFrames.length === 0) {
-      log.error('[LiveWatch] analyzeFrames: no valid frames');
-      return null;
-    }
-
-    const { pollinationsKey } = await chrome.storage.local.get('pollinationsKey');
-
-    if (!pollinationsKey) {
-      log.error('[LiveWatch] analyzeFrames: Pollinations API key not set');
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: 'กรุณาใส่ Pollinations API Key ใน Settings', at: now },
-      });
-      return null;
-    }
-
-    const url     = POLLINATIONS_URL_NEW;
-    const model   = POLLINATIONS_MODEL;
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${pollinationsKey}`,
-    };
-
-    const prompt = `You are a JSON-only API analyzing a TikTok Live selling stream.
-You are given ${validFrames.length} frames captured 5 seconds apart (frame 1 → frame 2 → frame 3).
-Use ALL frames together to understand the full context of what is happening.
-
-Respond with ONLY this JSON object — no markdown, no extra text:
-{
-  "presenter_visible": true,       // มีคนอยู่ในเฟรมไหม
-  "eye_contact_score": 75,         // มองกล้อง 0-100
-  "smile_score": 80,               // ยิ้มแย้ม 0-100 (ดูรวมทั้งสีหน้า ไม่ใช่แค่ปาก — ถ้าพูดแอคทีฟก็ถือว่า engage)
-  "energy_level": 70,              // พลังงาน/ความกระตือรือร้น 0-100
-  "engagement_score": 75,          // ความ engage กับ live โดยรวม (รวม eye contact + พูดแอคทีฟ + มองกล้อง + อ่าน comment)
-  "distracted": false,             // หันไปคุยนอกกล้อง หรือเงียบนิ่งนานผิดปกติ
-  "phone_detected": false,         // ถือมือถือในเฟรม
-  "multiple_people": false,        // มีคนอื่นโผล่โดยไม่ตั้งใจ
-  "product_presenting": true,      // กำลังแสดง/ถือสินค้า
-  "demo_in_progress": false,       // กำลัง demo วิธีใช้สินค้า
-  "lighting_quality": 85,          // แสง 0-100
-  "background_clean": true,        // พื้นหลังเรียบร้อย
-  "activity_summary": "Presenter actively talking and reading comments, holding product",
-  "alert_flag": false              // true ถ้ามีปัญหา
-}
-
-Scoring rules:
-- eye_contact_score: averaged across all frames. Reading comments = ~40, looking away = 10, direct camera gaze = 90+
-- smile_score: score the overall positive facial expression and energy, NOT just mouth shape. Active talking with expressive face = 60+, genuinely smiling = 80+, flat/bored = 20
-- engagement_score: holistic score — is this presenter actively working the live? Talking, gesturing, reacting to comments all count
-- energy_level: 0=sleepy/still, 100=very animated, moving, gesturing enthusiastically
-- distracted: true only if clearly ignoring the live audience for extended time
-- alert_flag: true if ANY: phone_detected in 2+ frames, eye_contact_score<20, energy_level<15, distracted=true`;
-
-    const content = [
-      { type: 'text', text: prompt },
-      ...validFrames.map((b64) => ({
-        type: 'image_url',
-        image_url: { url: `data:image/jpeg;base64,${b64}` },
-      })),
-    ];
-
-    log.info(`[LiveWatch] analyzeFrames: ${url} model=${model}, frames=${validFrames.length}`);
-
-    let res;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content }],
-          response_format: { type: 'json_object' },
-          temperature: 0,
-        }),
-      });
-    } catch (fetchErr) {
-      log.error('[LiveWatch] analyzeFrames: network error:', fetchErr?.message);
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: `Network error: ${fetchErr?.message}`, at: now },
-      });
-      return null;
-    }
-
-    const rawText = await res.text();
-    log.info(`[LiveWatch] analyzeFrames: HTTP ${res.status}, len=${rawText.length}`);
-    log.info('[LiveWatch] analyzeFrames raw:', rawText.substring(0, 400));
-
-    if (!res.ok) {
-      log.error('[LiveWatch] analyzeFrames HTTP error:', res.status, rawText.substring(0, 300));
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: `API ${res.status}: ${rawText.substring(0, 100)}`, at: now },
-      });
-      return null;
-    }
-
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: `Response not JSON`, at: now },
-      });
-      return null;
-    }
-
-    const text = data?.choices?.[0]?.message?.content ?? '';
-    log.info('[LiveWatch] analyzeFrames model content:', text);
-
-    const stripped = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
-    const jsonMatch = stripped.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      log.error('[LiveWatch] analyzeFrames: no JSON in:', stripped.substring(0, 200));
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: `Model returned: ${stripped.substring(0, 100)}`, at: now },
-      });
-      return null;
-    }
-
-    try {
-      const result = JSON.parse(jsonMatch[0]);
-      log.info('[LiveWatch] analyzeFrames OK:', result);
-      return result;
-    } catch (parseErr) {
-      await chrome.storage.local.set({
-        lastCaptureStatus: { step: 'error', message: `JSON parse error`, at: now },
-      });
-      return null;
-    }
-  } catch (e) {
-    log.error('[LiveWatch] analyzeFrames unhandled error:', e);
-    return null;
-  }
-}
+// analyzeFrames is imported from ./ai.js (SaaS proxy client).
 
 // ─── SaaS LINE relay ──────────────────────────────────────────────────────────
 
@@ -1058,13 +922,13 @@ async function triggerBurst() {
   state.status = STATUS.ANALYZING;
   await saveState();
 
-  log.info(`[LiveWatch] analyzeFrames: sending ${response.frames.length} frames to Pollinations...`);
-  const scores = await analyzeFrames(response.frames, response.meta);
+  log.info(`[LiveWatch] analyzeFrames: sending ${response.frames.length} frames to SaaS proxy...`);
+  const scores = await analyzeFrames(response.frames);
   log.info('[LiveWatch] analyzeFrames result:', scores);
 
   if (!scores) {
     await chrome.storage.local.set({
-      lastCaptureStatus: { step: 'error', message: 'Pollinations ไม่ตอบกลับหรือ parse JSON ไม่ได้', at: capturedAt },
+      lastCaptureStatus: { step: 'error', message: 'AI วิเคราะห์ไม่สำเร็จ — ตรวจสอบการเชื่อมต่อบัญชี LiveWatch', at: capturedAt },
     });
   }
 
@@ -1186,9 +1050,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         if (stats?.room_status === 4) {
           const { roomEnded } = await chrome.storage.local.get('roomEnded');
           if (roomEnded?.sessionId === s.sessionId) {
-            const { pollinationsKey } = await chrome.storage.local.get('pollinationsKey');
-            const cfg = { pollinationsKey: pollinationsKey ?? null };
-            await finalizeSession(s.sessionId, cfg);
+            await finalizeSession(s.sessionId, {});
             await goOffline();
           }
         }
@@ -1196,10 +1058,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     } else if (alarm.name === 'chatBatch') {
       await loadState();
       if (state.sessionId) {
-        const { pollinationsKey } = await chrome.storage.local.get('pollinationsKey');
-        const cfg = { pollinationsKey: pollinationsKey ?? null };
         await flushChatBuffer(state.sessionId);
-        await runChatSentimentBatch(state.sessionId, cfg);
+        await runChatSentimentBatch(state.sessionId, {});
       }
     }
   } catch (e) {
@@ -1231,9 +1091,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Only finalize if not already being finalized by room_status detection
           const { endingSession } = await chrome.storage.local.get('endingSession');
           if (!endingSession && s.sessionId) {
-            const { pollinationsKey } = await chrome.storage.local.get('pollinationsKey');
-            const cfg = { pollinationsKey: pollinationsKey ?? null };
-            await finalizeSession(s.sessionId, cfg);
+            await finalizeSession(s.sessionId, {});
           }
         } catch (e) {
           log.error('[LiveWatch] LIVE_ENDED finalizeSession error:', e);
@@ -1477,7 +1335,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details?.reason === 'update') {
     chrome.storage.local.remove(['googleOAuthToken', 'driveFolderId']).catch(() => {});
     // Detect legacy LINE config and nudge user to reconnect via SaaS
-    chrome.storage.local.get(['config', 'lineToken', 'lineUserId']).then((items) => {
+    chrome.storage.local.get(['config', 'lineToken', 'lineUserId', 'pollinationsKey', 'supabaseUrl', 'supabaseKey']).then((items) => {
       const cfg = items.config ?? {};
       if (cfg.lineToken || cfg.lineUserId || items.lineToken || items.lineUserId) {
         console.warn('[LiveWatch] legacy LINE config detected — please connect via Settings → LiveWatch Account');
@@ -1485,6 +1343,9 @@ chrome.runtime.onInstalled.addListener((details) => {
           chrome.action.setBadgeText({ text: 'CFG' });
           chrome.action.setBadgeBackgroundColor({ color: '#FFA500' });
         } catch (_) {}
+      }
+      if (cfg?.pollinationsKey || cfg?.supabaseUrl || cfg?.supabaseKey || items.pollinationsKey || items.supabaseUrl || items.supabaseKey) {
+        console.info('[LiveWatch] legacy AI/Supabase config detected — these are now handled by the SaaS backend. You can ignore.');
       }
     }).catch(() => {});
   }

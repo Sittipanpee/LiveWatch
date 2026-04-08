@@ -7,11 +7,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Button, Card, Input, Alert } from '@/components/ui'
 import { useT } from '@/components/LocaleProvider'
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter()
   const t = useT()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -23,10 +24,14 @@ export default function LoginPage() {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()
+    if (!agreed) {
+      setError('กรุณายอมรับข้อตกลงและนโยบายความเป็นส่วนตัว')
+      return
+    }
     setError(null)
     setLoading(true)
     const supabase = createClient()
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    const { error: authError } = await supabase.auth.signUp({ email, password })
     setLoading(false)
     if (authError) {
       setError(authError.message)
@@ -41,8 +46,8 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-block w-12 h-12 rounded-2xl bg-brand mb-4" />
-          <h1 className="text-2xl font-bold">{t('auth', 'signInHeading')}</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in</p>
+          <h1 className="text-2xl font-bold">{t('auth', 'signUpHeading')}</h1>
+          <p className="text-sm text-gray-500 mt-1">Create an account</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <Input
@@ -62,8 +67,27 @@ export default function LoginPage() {
             label={t('auth', 'password')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="new-password"
           />
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              required
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              ฉันยอมรับ{' '}
+              <Link href="/terms" className="text-brand hover:underline">
+                ข้อตกลง
+              </Link>{' '}
+              และ{' '}
+              <Link href="/privacy" className="text-brand hover:underline">
+                นโยบายความเป็นส่วนตัว
+              </Link>
+            </span>
+          </label>
           {error ? <Alert variant="danger">{error}</Alert> : null}
           <Button
             type="submit"
@@ -72,13 +96,13 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full"
           >
-            {loading ? t('common', 'loading') : t('auth', 'signInHeading')}
+            {loading ? t('common', 'loading') : t('auth', 'signUpHeading')}
           </Button>
         </form>
         <p className="text-center text-sm text-gray-600 mt-6">
-          {t('auth', 'noAccount')}{' '}
-          <Link href="/signup" className="text-brand font-semibold hover:underline">
-            {t('auth', 'signUpHeading')} →
+          {t('auth', 'hasAccount')}{' '}
+          <Link href="/login" className="text-brand font-semibold hover:underline">
+            {t('auth', 'signInHeading')} →
           </Link>
         </p>
       </Card>

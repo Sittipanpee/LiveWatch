@@ -5,9 +5,6 @@
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEYS = [
-  'pollinationsKey',
-  'supabaseUrl',
-  'supabaseKey',
   'captureInterval',
   'summaryHour',
 ];
@@ -20,20 +17,11 @@ const apiBaseEl        = document.getElementById('apiBase');
 const apiTokenEl       = document.getElementById('apiToken');
 const testApiBtn       = document.getElementById('testApi');
 const apiStatusEl      = document.getElementById('apiStatus');
-const pollinationsKeyEl  = document.getElementById('pollinationsKey');
-const supabaseUrlEl      = document.getElementById('supabaseUrl');
-const supabaseKeyEl    = document.getElementById('supabaseKey');
 const captureIntervalEl = document.getElementById('captureInterval');
 const captureIntervalDisplay = document.getElementById('captureIntervalDisplay');
 const summaryHourEl    = document.getElementById('summaryHour');
 
 const saveBtn              = document.getElementById('saveBtn');
-const testSupabaseBtn      = document.getElementById('testSupabaseBtn');
-const testPollinationsBtn  = document.getElementById('testPollinationsBtn');
-const setupStorageBtn      = document.getElementById('setupStorageBtn');
-
-const supabaseTestResult     = document.getElementById('supabaseTestResult');
-const pollinationsTestResult = document.getElementById('pollinationsTestResult');
 
 const toastEl = document.getElementById('toast');
 const tierNoteEl = document.getElementById('tierNote');
@@ -144,10 +132,6 @@ function loadSettings() {
       return;
     }
 
-    if (items.pollinationsKey) pollinationsKeyEl.value = items.pollinationsKey;
-    if (items.supabaseUrl)     supabaseUrlEl.value     = items.supabaseUrl;
-    if (items.supabaseKey)     supabaseKeyEl.value     = items.supabaseKey;
-
     const interval = items.captureInterval != null ? Number(items.captureInterval) : 8;
     captureIntervalEl.value = interval;
     captureIntervalDisplay.textContent = interval;
@@ -168,17 +152,7 @@ function loadSettings() {
 // ---------------------------------------------------------------------------
 
 function saveSettings() {
-  const fields = {
-    pollinationsKey: pollinationsKeyEl.value.trim(),
-    supabaseUrl:     normaliseUrl(supabaseUrlEl.value.trim()),
-    supabaseKey:     supabaseKeyEl.value.trim(),
-  };
-
-  // Only persist fields the user actually entered
   const data = {};
-  for (const [key, value] of Object.entries(fields)) {
-    if (value) data[key] = value;
-  }
 
   // Numeric fields always saved (have defaults from <select>)
   let intervalVal = Number(captureIntervalEl.value);
@@ -263,151 +237,6 @@ async function testApiConnection() {
     apiStatusEl.style.color = '#991b1b';
   } finally {
     testApiBtn.disabled = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Test Pollinations API key
-// ---------------------------------------------------------------------------
-
-async function testPollinations() {
-  const key = pollinationsKeyEl.value.trim();
-  if (!key) {
-    showTestResult(pollinationsTestResult, 'error', 'กรุณากรอก API Key ก่อนทดสอบ');
-    return;
-  }
-
-  testPollinationsBtn.disabled = true;
-  clearTestResult(pollinationsTestResult);
-
-  try {
-    const res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: 'gemini-flash-lite-3.1',
-        messages: [{ role: 'user', content: 'reply: {"ok":true}' }],
-        temperature: 0,
-        max_tokens: 20,
-      }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content ?? '';
-      showTestResult(pollinationsTestResult, 'success', `เชื่อมต่อสำเร็จ — model: ${data.model ?? 'gemini-flash-lite-3.1'}`);
-    } else {
-      const detail = await res.text().catch(() => String(res.status));
-      showTestResult(pollinationsTestResult, 'error', `ผิดพลาด (${res.status}): ${detail.slice(0, 80)}`);
-    }
-  } catch (err) {
-    showTestResult(pollinationsTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
-  } finally {
-    testPollinationsBtn.disabled = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Setup Supabase Storage bucket
-// ---------------------------------------------------------------------------
-
-async function setupStorageBucket() {
-  const rawUrl = supabaseUrlEl.value.trim();
-  const key    = supabaseKeyEl.value.trim();
-
-  if (!rawUrl || !key) {
-    showTestResult(supabaseTestResult, 'error', 'กรุณากรอก URL และ Key ก่อน');
-    return;
-  }
-
-  const baseUrl = normaliseUrl(rawUrl);
-  setupStorageBtn.disabled = true;
-  clearTestResult(supabaseTestResult);
-
-  try {
-    // Try to create the bucket (public: true so LINE can fetch images)
-    const res = await fetch(`${baseUrl}/storage/v1/bucket`, {
-      method: 'POST',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ id: 'livewatch-frames', name: 'livewatch-frames', public: true }),
-    });
-
-    if (res.ok) {
-      showTestResult(supabaseTestResult, 'success', 'สร้าง Storage Bucket สำเร็จ — รูปภาพจะถูกส่งใน LINE แล้ว');
-    } else {
-      const text = await res.text();
-      // 409 = already exists, which is fine
-      if (res.status === 409 || text.includes('already exists') || text.includes('duplicate')) {
-        // Bucket exists — make sure it's public by updating it
-        await fetch(`${baseUrl}/storage/v1/bucket/livewatch-frames`, {
-          method: 'PUT',
-          headers: {
-            'apikey': key,
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ public: true }),
-        });
-        showTestResult(supabaseTestResult, 'success', 'Storage Bucket มีอยู่แล้ว และตั้งค่า Public แล้ว ✓');
-      } else {
-        showTestResult(supabaseTestResult, 'error', `สร้างไม่สำเร็จ (${res.status}): ${text.slice(0, 80)}`);
-      }
-    }
-  } catch (err) {
-    showTestResult(supabaseTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
-  } finally {
-    setupStorageBtn.disabled = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Test Supabase connection
-// ---------------------------------------------------------------------------
-
-async function testSupabase() {
-  const rawUrl = supabaseUrlEl.value.trim();
-  const key    = supabaseKeyEl.value.trim();
-
-  if (!rawUrl || !key) {
-    showTestResult(supabaseTestResult, 'error', 'กรุณากรอก URL และ Anon Key ก่อนทดสอบ');
-    return;
-  }
-
-  const baseUrl = normaliseUrl(rawUrl);
-  const healthUrl = `${baseUrl}/rest/v1/`;
-
-  testSupabaseBtn.disabled = true;
-  clearTestResult(supabaseTestResult);
-
-  try {
-    const res = await fetch(healthUrl, {
-      method: 'GET',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-      },
-    });
-
-    // Supabase REST root returns 200 or 400 (schema listing) — both mean the
-    // project is reachable and the key is accepted. 401/403 means bad key.
-    if (res.status === 200 || res.status === 400) {
-      showTestResult(supabaseTestResult, 'success', 'เชื่อมต่อสำเร็จ');
-    } else if (res.status === 401 || res.status === 403) {
-      showTestResult(supabaseTestResult, 'error', `Anon Key ไม่ถูกต้อง (${res.status})`);
-    } else {
-      showTestResult(supabaseTestResult, 'error', `ตอบกลับ (${res.status}) — ตรวจสอบ URL`);
-    }
-  } catch (err) {
-    showTestResult(supabaseTestResult, 'error', `เชื่อมต่อไม่ได้: ${err.message}`);
-  } finally {
-    testSupabaseBtn.disabled = false;
   }
 }
 
@@ -862,10 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn.addEventListener('click', saveSettings);
-  testPollinationsBtn.addEventListener('click', testPollinations);
   testApiBtn.addEventListener('click', testApiConnection);
-  testSupabaseBtn.addEventListener('click', testSupabase);
-  setupStorageBtn.addEventListener('click', setupStorageBucket);
 
   btnSheetsConnect.addEventListener('click', handleSheetsConnect);
   btnSheetsDisconnect.addEventListener('click', handleSheetsDisconnect);

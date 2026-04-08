@@ -284,43 +284,6 @@
       <div id="apiStatus" style="margin-top:10px;font-size:12px;"></div>
     </div>
 
-    <!-- Section 1b: Pollinations AI -->
-    <div class="card">
-      <div class="section-title">Pollinations AI (วิเคราะห์ภาพ)</div>
-
-      <div class="field">
-        <label for="pollinationsKey">Pollinations API Key</label>
-        <input type="password" id="pollinationsKey" placeholder="sk_..." autocomplete="off" spellcheck="false" />
-        <div class="helper-text">ได้จาก <a href="https://enter.pollinations.ai" target="_blank" style="color:#009995">enter.pollinations.ai</a> — ใช้ model gemini-flash-lite-3.1</div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-outline" id="testPollinationsBtn">ทดสอบ API Key</button>
-      </div>
-      <div id="pollinationsTestResult"></div>
-    </div>
-
-    <!-- Section 2: Supabase -->
-    <div class="card">
-      <div class="section-title">Supabase (ฐานข้อมูล)</div>
-
-      <div class="field">
-        <label for="supabaseUrl">Supabase Project URL</label>
-        <input type="text" id="supabaseUrl" placeholder="https://xxxx.supabase.co" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <div class="field">
-        <label for="supabaseKey">Supabase Anon Key</label>
-        <input type="password" id="supabaseKey" placeholder="eyJ..." autocomplete="off" spellcheck="false" />
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-outline" id="testSupabaseBtn">ทดสอบการเชื่อมต่อ</button>
-        <button class="btn btn-outline" id="setupStorageBtn">สร้าง Storage Bucket</button>
-      </div>
-      <div id="supabaseTestResult"></div>
-    </div>
-
     <!-- Section 2b: Google Sheets -->
     <div class="card">
       <div class="section-title">Google Sheets (ทางเลือกแทน Supabase)</div>
@@ -385,16 +348,17 @@
     <div class="card" style="margin-top:28px;background:#f0fafa;border:1.5px solid #99d6d5;">
       <div class="section-title" style="color:#007c7a;">ข้อมูลความเป็นส่วนตัว</div>
       <p style="font-size:12px;color:#374151;line-height:1.8;">
-        Extension นี้เก็บข้อมูลดังต่อไปนี้เพื่อให้บริการ:
+        ข้อมูลที่ Extension นี้เก็บและส่ง:
       </p>
       <ul style="font-size:12px;color:#374151;line-height:1.9;margin-top:8px;padding-left:18px;">
-        <li>ภาพหน้าจอจากไลฟ์ (เก็บใน Supabase Storage หรือ Google Drive ที่คุณกำหนดเอง)</li>
-        <li>ข้อความแชทในไลฟ์ (เก็บใน Supabase หรือ Google Sheets ที่คุณกำหนดเอง)</li>
-        <li>สถิติไลฟ์ (ผู้ชม, ยอดขาย) เก็บในเครื่องและใน Backend ของคุณ</li>
-        <li>ผลวิเคราะห์ AI ส่งไปยัง Pollinations API เพื่อประมวลผล</li>
+        <li>ภาพหน้าจอจากไลฟ์ของคุณ → ส่งไปยัง LiveWatch Backend เพื่อวิเคราะห์ด้วย AI และส่งแจ้งเตือน</li>
+        <li>การวิเคราะห์ AI ทำที่ Backend ของเรา — คุณไม่ต้องใช้ API Key เอง</li>
+        <li>แจ้งเตือน LINE ส่งผ่าน Backend ของเรา — คุณไม่ต้องตั้งค่า LINE Bot เอง</li>
+        <li>ข้อมูลทั้งหมดอยู่ในบัญชี LiveWatch ของคุณเท่านั้น</li>
+        <li>Google Sheets/Drive เป็นตัวเลือกเสริมสำหรับสำรองข้อมูลใน Google account ของคุณเอง</li>
       </ul>
       <p style="font-size:12px;color:#6b7280;margin-top:8px;">
-        ข้อมูลทั้งหมดส่งไปยัง Backend ที่ <strong>คุณตั้งค่าเองเท่านั้น</strong> — ไม่มีการส่งข้อมูลไปยังบุคคลที่สาม
+        อ่าน Privacy Policy ฉบับเต็มได้ที่: <a href="https://livewatch-psi.vercel.app/privacy" target="_blank" style="color:#007c7a;">livewatch-psi.vercel.app/privacy</a>
       </p>
     </div>
 

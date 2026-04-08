@@ -120,3 +120,18 @@ The Chrome extension connects to this SaaS via API tokens. Flow:
    `chrome.runtime.sendMessage(extId, { type: 'SET_API_TOKEN', token, apiBase })`
 5. Extension receives the token, validates sender origin, stores in chrome.storage.local
 6. Manual copy-paste remains as fallback for non-Chrome browsers
+
+## AI proxy
+
+`POST /api/ai/analyze` — extension sends base64 frames with Bearer token,
+backend forwards to Pollinations using the server-side `POLLINATIONS_API_KEY`.
+
+Rate limit: per user tier (gold 3/hr, platinum 6/hr, diamond 12/hr) tracked
+in `public.ai_analysis_logs` table.
+
+### Setup
+
+```
+vercel env add POLLINATIONS_API_KEY production
+# paste your Pollinations API key (starts with sk_)
+```
