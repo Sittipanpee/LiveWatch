@@ -108,3 +108,77 @@ chrome.alarms('captureBurst')
 - Check off `- [x]` any items that are now fully implemented
 - Add new items under the appropriate phase if scope expanded
 - This must happen before the final response to the user — not as an afterthought
+
+---
+
+## ⚠️ Outstanding Manual Tasks (Check at Start of Every Session)
+
+**At the start of every session, scan this section. For each unchecked item, REMIND the user politely (one short sentence each). When the user confirms an item is done, DELETE it from this list and commit the CLAUDE.md update.**
+
+### 🟡 Pending — Awaiting User Action
+
+- [ ] **Schedule `cleanup-frames` Edge Function cron in Supabase Dashboard**
+  - URL: https://supabase.com/dashboard/project/sfgccfrwwfuhcehcngza/integrations/cron/overview
+  - Edge function `cleanup-frames` is already deployed and tested working
+  - Need: enable `pg_cron` extension → create cron job (`0 3 * * *`, type=Edge Function, function=cleanup-frames, method=POST)
+  - Alternative: SQL `select cron.schedule('cleanup-frames-daily', '0 3 * * *', $$ select net.http_post(...) $$);`
+
+- [ ] **Rotate `POLLINATIONS_API_KEY`** (key was pasted in chat history)
+  - Go to https://enter.pollinations.ai → revoke current key → generate new
+  - Update Vercel: `vercel env rm POLLINATIONS_API_KEY production --yes && vercel env add POLLINATIONS_API_KEY production`
+  - Then `vercel --prod --yes` to redeploy
+
+- [ ] **Rotate `LINE_CHANNEL_SECRET` + `LINE_CHANNEL_ACCESS_TOKEN`** (also pasted in chat history)
+  - LINE Developer Console → Messaging API → reissue secret + token
+  - Update Vercel env vars (same pattern)
+
+- [ ] **Rotate Supabase service_role + anon JWT keys** (pasted in chat history)
+  - Supabase Dashboard → Settings → API → roll keys
+  - Update Vercel env vars + redeploy
+
+- [ ] **Add Chrome Web Store `key` field to `manifest.json`** (after first publish)
+  - Without this, unpacked dev installs get random IDs and `chrome.identity.getAuthToken` breaks
+  - Extract from the `.crx` after first Web Store upload → add to manifest.json
+  - See `docs/oauth-setup.md` for instructions
+
+- [ ] **Decision: upload all 3 frames per burst to user's Drive (currently only frame[0] thumbnail)**
+  - Trade-off: 3x Drive quota usage vs richer history
+  - User must decide → tell Claude which path; can spawn Frontend agent to expand
+
+- [ ] **Decision: clean up dead Supabase code paths in `src/background.js`**
+  - `uploadThumbnail`, `sendDailySummary`, etc. still reference `supabaseUrl`/`supabaseKey` from config (which are now always empty since the settings UI removed those fields). Calls become inert no-ops. Functional but adds clutter. Leaving for safety/rollback.
+
+### 📦 Architecture (post-SaaS migration)
+
+The extension is now a **SaaS client**. Key changes from original architecture:
+
+- **No more user-provided API keys**: LINE, Pollinations, and Supabase are all proxied through the SaaS backend at `https://livewatch-psi.vercel.app`
+- **Authentication**: extension stores `apiToken` (lw_*) in `chrome.storage.local.config`. Authentication via `Authorization: Bearer` header to all backend endpoints.
+- **Auto-paste flow**: extension opens SaaS with `?extId=<chrome.runtime.id>`, dashboard sends token back via `chrome.runtime.sendMessage` → `onMessageExternal` listener (whitelisted via `externally_connectable` in manifest.json)
+- **Tier enforcement**: `src/tier.js` reads `chrome.storage.local.userTier`, `effectiveCaptureInterval()` clamps user setting to tier minimum. Backend also enforces via `/api/ai/analyze` rate limit.
+- **i18n**: `src/i18n.js` ES module + `data-i18n="group.key"` attributes in popup/settings/onboarding HTML. Default `th`, toggle to `en`.
+
+### 🌐 SaaS Companion App (under `saas/`)
+
+Next.js 15 + Tailwind v4 + Supabase Auth + bilingual i18n. Key files:
+- `app/api/{ai/analyze, line/{webhook,send}, pairing/{regenerate,status}, tokens/{generate,list,revoke}, user/tier}` — backend API routes
+- `app/(auth)/{login,signup}/page.tsx` — separate auth pages with `?extId=` capture
+- `app/(dash)/dashboard/{page,OnboardingChecklist,PairingSection,TokensSection,PlanCard}.tsx` — guided dashboard with 4-step checklist
+- `components/ui/*` — Button, Card, Input, Badge, Alert, StepCard built on Tailwind + cva
+- `components/{LocaleProvider,LanguageSwitcher,Navbar}.tsx` — i18n context + UI shell
+- `lib/{i18n,utils,tiers,tokens,auth,pairing,ai,line/*,supabase/*}.ts` — typed helpers
+
+Vercel project: `sittipanpees-projects/livewatch` → https://livewatch-psi.vercel.app
+Repo root has `.vercel/` link; `Root Directory` is set to `saas` in Vercel project settings, so deploy from repo root with `vercel --prod --yes`.
+
+### 🔒 Required Vercel Env Vars
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+LINE_CHANNEL_SECRET
+LINE_CHANNEL_ACCESS_TOKEN
+NEXT_PUBLIC_APP_URL
+POLLINATIONS_API_KEY
+```
