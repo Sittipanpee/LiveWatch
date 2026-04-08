@@ -83,19 +83,14 @@ export default async function DashboardPage() {
   const tokens: TokenRow[] = user ? await loadTokens(user.id) : []
 
   return (
-    <main style={{ maxWidth: 640, margin: '40px auto', padding: 24 }}>
-      <h1>Dashboard</h1>
+    <main className="container">
+      <h1>
+        แดชบอร์ด <span className="label-en">/ Dashboard</span>
+      </h1>
 
-      <section
-        style={{
-          marginTop: 24,
-          padding: 16,
-          border: `2px solid ${color}`,
-          borderRadius: 8,
-        }}
-      >
+      <section className="card">
         <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
-          Subscription
+          แพลนของคุณ <span className="label-en">/ Your Plan</span>
           <span
             style={{
               background: color,
@@ -111,12 +106,12 @@ export default async function DashboardPage() {
           </span>
         </h2>
         <ul style={{ marginTop: 12, paddingLeft: 20 }}>
-          <li>Max captures per hour: {limits.maxCapturesPerHour}</li>
-          <li>Min interval: {limits.minIntervalMinutes} minutes</li>
+          <li>สูงสุด {limits.maxCapturesPerHour} ครั้ง/ชั่วโมง</li>
+          <li>ช่วงเวลาขั้นต่ำ {limits.minIntervalMinutes} นาที</li>
         </ul>
         {expiresAt ? (
-          <p style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
-            Renews/expires {new Date(expiresAt).toLocaleString()}
+          <p className="muted" style={{ marginTop: 8 }}>
+            ต่ออายุ / Renews: {new Date(expiresAt).toLocaleString()}
           </p>
         ) : null}
       </section>

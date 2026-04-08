@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
+import './globals.css'
 
 export const metadata: Metadata = {
   title: 'LiveWatch',
@@ -13,34 +14,26 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body
-        style={{
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          margin: 0,
-          background: '#fafafa',
-          color: '#111',
-        }}
-      >
+    <html lang="th">
+      <body>
         {children}
         <footer
           style={{
             marginTop: 64,
             padding: '24px',
-            borderTop: '1px solid #e5e5e5',
+            borderTop: '1px solid var(--border)',
             textAlign: 'center',
             fontSize: 13,
-            color: '#666',
+            color: 'var(--text-muted)',
           }}
         >
-          <a href="/" style={{ color: '#666', margin: '0 12px' }}>
+          <a href="/" style={{ color: 'var(--text-muted)', margin: '0 12px' }}>
             Home
           </a>
-          <a href="/privacy" style={{ color: '#666', margin: '0 12px' }}>
+          <a href="/privacy" style={{ color: 'var(--text-muted)', margin: '0 12px' }}>
             Privacy Policy
           </a>
-          <a href="/terms" style={{ color: '#666', margin: '0 12px' }}>
+          <a href="/terms" style={{ color: 'var(--text-muted)', margin: '0 12px' }}>
             Terms of Service
           </a>
         </footer>

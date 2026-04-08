@@ -36,43 +36,75 @@ export default function LoginPage() {
     router.refresh()
   }
 
+  const title = mode === 'signin' ? 'เข้าสู่ระบบ' : 'สมัครใช้งาน'
+  const titleEn = mode === 'signin' ? 'Sign in' : 'Create an account'
+
   return (
-    <main style={{ maxWidth: 360, margin: '80px auto', padding: 24 }}>
-      <h1 style={{ marginBottom: 16 }}>LiveWatch</h1>
-      <form onSubmit={onSubmit}>
-        <label style={{ display: 'block', marginBottom: 8 }}>
-          Email
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ display: 'block', width: '100%', padding: 8, marginTop: 4 }}
-          />
-        </label>
-        <label style={{ display: 'block', marginBottom: 12 }}>
-          Password
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ display: 'block', width: '100%', padding: 8, marginTop: 4 }}
-          />
-        </label>
-        {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
-        <button type="submit" disabled={loading} style={{ width: '100%', padding: 10 }}>
-          {loading ? '...' : mode === 'signin' ? 'Sign in' : 'Sign up'}
+    <main className="container" style={{ maxWidth: 420 }}>
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <h1 style={{ margin: 0, color: 'var(--brand)' }}>LiveWatch</h1>
+        <p className="muted" style={{ margin: '4px 0 0' }}>
+          AI monitor สำหรับไลฟ์คอมเมิร์ซ
+        </p>
+      </div>
+      <section className="card">
+        <h2 style={{ marginTop: 0 }}>
+          {title} <span className="label-en">/ {titleEn}</span>
+        </h2>
+        <form onSubmit={onSubmit}>
+          <label style={{ display: 'block', marginBottom: 12 }}>
+            <div style={{ marginBottom: 4, fontSize: 13, fontWeight: 600 }}>
+              อีเมล <span className="label-en">/ Email</span>
+            </div>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label style={{ display: 'block', marginBottom: 16 }}>
+            <div style={{ marginBottom: 4, fontSize: 13, fontWeight: 600 }}>
+              รหัสผ่าน <span className="label-en">/ Password</span>
+            </div>
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          {error ? (
+            <p style={{ color: 'crimson', fontSize: 13 }}>❌ {error}</p>
+          ) : null}
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary"
+            style={{ width: '100%' }}
+          >
+            {loading ? '...' : `${title} / ${titleEn}`}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+          style={{
+            marginTop: 12,
+            background: 'none',
+            border: 'none',
+            color: 'var(--brand)',
+            cursor: 'pointer',
+            width: '100%',
+            fontSize: 13,
+          }}
+        >
+          {mode === 'signin'
+            ? 'ยังไม่มีบัญชี? สมัครใช้งาน / Create an account'
+            : 'มีบัญชีแล้ว? เข้าสู่ระบบ / Have an account? Sign in'}
         </button>
-      </form>
-      <button
-        type="button"
-        onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-        style={{ marginTop: 12, background: 'none', border: 'none', color: '#06f', cursor: 'pointer' }}
-      >
-        {mode === 'signin' ? 'Create an account' : 'Have an account? Sign in'}
-      </button>
+      </section>
     </main>
   )
 }

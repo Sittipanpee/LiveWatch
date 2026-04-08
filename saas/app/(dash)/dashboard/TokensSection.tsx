@@ -59,7 +59,7 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
     try {
       const chromeApi = (window as unknown as { chrome?: ChromeRuntimeApi }).chrome
       if (!chromeApi?.runtime?.sendMessage || !extId) {
-        setSendStatus('Chrome extension not detected. Copy the token manually below.')
+        setSendStatus('ไม่พบ Chrome Extension กรุณาคัดลอก token ด้วยตนเอง / Extension not detected — copy manually.')
         return
       }
       chromeApi.runtime.sendMessage(
@@ -68,17 +68,17 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
         (response) => {
           if (response?.ok) {
             setSendStatus(
-              'ส่งไปยัง Extension สำเร็จ! ปิดหน้านี้และกลับไปที่ Chrome / Sent! Close this tab and return to Chrome.',
+              '✅ ส่งไปยัง Extension สำเร็จ! ปิดหน้านี้และกลับไปที่ Chrome / Sent! Close this tab and return to Chrome.',
             )
           } else {
             setSendStatus(
-              `${response?.error ?? 'Failed to reach extension'}. Copy the token manually below.`,
+              `${response?.error ?? 'Failed to reach extension'} — กรุณาคัดลอกด้วยตนเอง / Copy manually.`,
             )
           }
         },
       )
     } catch (e) {
-      setSendStatus(`${e instanceof Error ? e.message : 'unknown error'}. Copy manually.`)
+      setSendStatus(`${e instanceof Error ? e.message : 'unknown error'} — กรุณาคัดลอกด้วยตนเอง.`)
     }
   }
 
@@ -100,7 +100,7 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
         body: JSON.stringify({ label }),
       })
       if (!res.ok) {
-        setError('Failed to generate token')
+        setError('สร้าง token ไม่สำเร็จ / Failed to generate token')
         return
       }
       const body = (await res.json()) as GenerateResponse
@@ -112,7 +112,7 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
   }
 
   async function revoke(id: string): Promise<void> {
-    if (!confirm('Revoke this token? The extension using it will stop working.')) return
+    if (!confirm('ยกเลิก token นี้? Extension ที่ใช้อยู่จะหยุดทำงาน / Revoke this token?')) return
     setBusy(true)
     setError(null)
     try {
@@ -122,7 +122,7 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
         body: JSON.stringify({ id }),
       })
       if (!res.ok) {
-        setError('Failed to revoke token')
+        setError('ยกเลิกไม่สำเร็จ / Failed to revoke token')
         return
       }
       await refresh()
@@ -143,10 +143,12 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
   }
 
   return (
-    <section style={{ marginTop: 24, padding: 16, border: '1px solid #ddd', borderRadius: 8 }}>
-      <h2 style={{ margin: 0 }}>Chrome Extension Connection</h2>
-      <p style={{ fontSize: 13, color: '#555' }}>
-        Generate an API token to connect the LiveWatch Chrome extension to your account.
+    <section className="card">
+      <h2 style={{ marginTop: 0 }}>
+        เชื่อมต่อ Chrome Extension <span className="label-en">/ Chrome Extension Connection</span>
+      </h2>
+      <p className="muted">
+        สร้าง API token เพื่อเชื่อมต่อ LiveWatch Chrome extension กับบัญชีของคุณ
       </p>
 
       {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
@@ -155,60 +157,59 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
         <div
           style={{
             marginTop: 12,
-            padding: 12,
-            background: '#fff8e1',
-            border: '2px solid #f9a825',
-            borderRadius: 6,
+            padding: 16,
+            background: '#FFF9E6',
+            border: '2px solid #D4AF37',
+            borderRadius: 8,
           }}
         >
-          <strong style={{ color: '#b26a00' }}>
-            Save this token now — it will not be shown again.
+          <strong style={{ color: '#8a6d00' }}>
+            ⚠️ บันทึก token นี้ไว้ตอนนี้ — ระบบจะไม่แสดงอีก / Save now — cannot be retrieved later
           </strong>
           <pre
             style={{
-              marginTop: 8,
-              padding: 8,
+              marginTop: 10,
+              padding: 10,
               background: '#fff',
-              border: '1px solid #e0e0e0',
-              borderRadius: 4,
+              border: '1px solid var(--border)',
+              borderRadius: 6,
               fontSize: 13,
               wordBreak: 'break-all',
               whiteSpace: 'pre-wrap',
+              fontFamily: 'monospace',
             }}
           >
             {plaintext}
           </pre>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {extId ? (
               <button
                 type="button"
                 onClick={() => sendToExtension(plaintext)}
-                style={{
-                  padding: '8px 16px',
-                  background: '#1565c0',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 4,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
+                className="btn-primary"
+                style={{ fontSize: 16, padding: '14px 22px' }}
               >
-                ส่งไปยัง Extension / Send to Extension
+                📤 ส่งไปยัง Extension
               </button>
             ) : null}
-            <button type="button" onClick={copy} style={{ padding: '6px 12px' }}>
-              {copied ? 'Copied!' : 'Copy'}
+            <button type="button" onClick={copy} className="btn-secondary">
+              {copied ? '✅ คัดลอกแล้ว / Copied!' : '📋 คัดลอก / Copy'}
             </button>
-            <button type="button" onClick={dismissPlaintext} style={{ padding: '6px 12px' }}>
-              I have saved it
+            <button
+              type="button"
+              onClick={dismissPlaintext}
+              className="btn-secondary"
+            >
+              บันทึกแล้ว / I have saved it
             </button>
           </div>
           {sendStatus ? (
-            <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>{sendStatus}</p>
+            <p style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>{sendStatus}</p>
           ) : null}
           {!extId ? (
-            <p style={{ fontSize: 12, marginTop: 8, marginBottom: 0, color: '#777' }}>
-              Open this page from the Chrome extension Settings to enable direct send.
+            <p className="muted" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+              เปิดหน้านี้จาก Extension Settings เพื่อเปิดใช้งานการส่งอัตโนมัติ / Open from the
+              Chrome extension Settings to enable direct send.
             </p>
           ) : null}
         </div>
@@ -218,68 +219,83 @@ export default function TokensSection({ initialTokens }: TokensSectionProps) {
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (e.g. My laptop)"
-            style={{ padding: '6px 8px', flex: 1, border: '1px solid #ccc', borderRadius: 4 }}
+            placeholder="ชื่อ (เช่น My laptop) / Label"
+            style={{ flex: 1 }}
           />
           <button
             type="button"
             onClick={generate}
             disabled={busy}
-            style={{ padding: '8px 16px' }}
+            className="btn-primary"
           >
-            {busy ? '...' : 'Generate token'}
+            {busy ? '...' : 'สร้าง Token ใหม่ / Generate new token'}
           </button>
         </div>
       )}
 
-      <ul style={{ marginTop: 16, padding: 0, listStyle: 'none' }}>
-        {tokens.length === 0 ? (
-          <li style={{ fontSize: 13, color: '#888' }}>No tokens yet.</li>
-        ) : (
-          tokens.map((t) => (
-            <li
-              key={t.id}
-              style={{
-                padding: 10,
-                marginBottom: 6,
-                border: '1px solid #eee',
-                borderRadius: 4,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                opacity: t.revoked ? 0.5 : 1,
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 600 }}>
+      <table style={{ width: '100%', marginTop: 20, borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
+            <th style={{ padding: '8px 6px' }}>
+              ชื่อ <span className="label-en">/ Label</span>
+            </th>
+            <th style={{ padding: '8px 6px' }}>
+              สร้างเมื่อ <span className="label-en">/ Created</span>
+            </th>
+            <th style={{ padding: '8px 6px' }}>
+              ใช้ล่าสุด <span className="label-en">/ Last used</span>
+            </th>
+            <th style={{ padding: '8px 6px' }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {tokens.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="muted" style={{ padding: 12, textAlign: 'center' }}>
+                ยังไม่มี token / No tokens yet.
+              </td>
+            </tr>
+          ) : (
+            tokens.map((t) => (
+              <tr
+                key={t.id}
+                style={{
+                  borderBottom: '1px solid var(--border)',
+                  opacity: t.revoked ? 0.5 : 1,
+                }}
+              >
+                <td style={{ padding: '10px 6px', fontWeight: 600 }}>
                   {t.label}
                   {t.revoked ? (
-                    <span style={{ color: 'crimson', marginLeft: 8, fontSize: 12 }}>
-                      revoked
+                    <span style={{ color: 'crimson', marginLeft: 8, fontSize: 11 }}>
+                      ยกเลิกแล้ว
                     </span>
                   ) : null}
-                </div>
-                <div style={{ fontSize: 11, color: '#777' }}>
-                  Created {new Date(t.createdAt).toLocaleString()}
-                  {t.lastUsedAt
-                    ? ` · Last used ${new Date(t.lastUsedAt).toLocaleString()}`
-                    : ' · Never used'}
-                </div>
-              </div>
-              {!t.revoked ? (
-                <button
-                  type="button"
-                  onClick={() => void revoke(t.id)}
-                  disabled={busy}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
-                >
-                  Revoke
-                </button>
-              ) : null}
-            </li>
-          ))
-        )}
-      </ul>
+                </td>
+                <td style={{ padding: '10px 6px', color: 'var(--text-muted)' }}>
+                  {new Date(t.createdAt).toLocaleString()}
+                </td>
+                <td style={{ padding: '10px 6px', color: 'var(--text-muted)' }}>
+                  {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString() : '—'}
+                </td>
+                <td style={{ padding: '10px 6px', textAlign: 'right' }}>
+                  {!t.revoked ? (
+                    <button
+                      type="button"
+                      onClick={() => void revoke(t.id)}
+                      disabled={busy}
+                      className="btn-secondary"
+                      style={{ padding: '6px 12px', fontSize: 12 }}
+                    >
+                      ยกเลิก / Revoke
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </section>
   )
 }
