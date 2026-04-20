@@ -19,7 +19,13 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search)
     const extId = params.get('extId')
     if (extId) sessionStorage.setItem('lw_extId', extId)
-  }, [])
+
+    // Redirect to dashboard if already logged in
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) router.replace('/dashboard')
+    })
+  }, [router])
 
   async function onSubmit(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()

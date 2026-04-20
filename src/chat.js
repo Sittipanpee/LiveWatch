@@ -97,6 +97,14 @@ export async function flushChatBuffer(sessionId) {
 
     if (pending.length === 0) return;
 
+    // Post-SaaS migration: Supabase credentials are no longer stored locally.
+    // Skip the Supabase insert silently — chat data lives in the local buffer
+    // and the Sheets dual-write path (if configured) still works.
+    const { config: flushConfig } = await chrome.storage.local.get('config');
+    if (!flushConfig?.supabaseUrl || !flushConfig?.supabaseKey) {
+      return;
+    }
+
     // Split into batches and insert each one.
     const successIds = new Set();
 
@@ -109,7 +117,7 @@ export async function flushChatBuffer(sessionId) {
 
       const { error } = await supabaseInsert('chat_logs', dbRows);
 
-      if (error && error !== 'not_configured') {
+      if (error && !error.includes('not configured')) {
         console.error('[LiveWatch] flushChatBuffer insert error:', error);
         // Do not mark batch as flushed — will retry on next cycle.
         continue;
@@ -220,58 +228,90 @@ export async function runChatSentimentBatch(sessionId, config) {
       `  "suggested_action": "<one concrete action for the seller to take now>"\n` +
       `}`;
 
-    // Choose authenticated vs. free endpoint based on whether a key is present.
-    const useAuth = Boolean(config && config.pollinationsKey);
-    const url     = useAuth ? POLLINATIONS_TEXT_AUTH : POLLINATIONS_TEXT_FREE;
-    const headers = { 'Content-Type': 'application/json' };
-    if (useAuth) {
-      headers['Authorization'] = `Bearer ${config.pollinationsKey}`;
+    const chatMessages = [
+      {
+        role:    'system',
+        content: 'You are analyzing TikTok live stream chat for a Thai seller. Reply ONLY in valid JSON.',
+      },
+      {
+        role:    'user',
+        content: userPrompt,
+      },
+    ];
+
+    // ── Primary path: SaaS proxy (uses server-side API key) ──────────────
+    let rawText = '';
+    const apiToken = config?.apiToken;
+    if (apiToken) {
+      const apiBase = (config?.apiBase ?? 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+      try {
+        const saasRes = await fetch(`${apiBase}/api/ai/chat`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ messages: chatMessages, temperature: 0 }),
+        });
+        if (saasRes.ok) {
+          const saasJson = await saasRes.json();
+          rawText = saasJson?.content ?? '';
+          if (rawText) {
+            console.info('[LiveWatch] runChatSentimentBatch: using SaaS proxy response');
+          }
+        } else {
+          console.warn('[LiveWatch] runChatSentimentBatch SaaS error:', saasRes.status);
+        }
+      } catch (saasErr) {
+        console.warn('[LiveWatch] runChatSentimentBatch SaaS network error:', saasErr?.message);
+      }
     }
 
-    const body = JSON.stringify({
-      model:    POLLINATIONS_TEXT_MODEL,
-      messages: [
-        {
-          role:    'system',
-          content: 'You are analyzing TikTok live stream chat for a Thai seller. Reply ONLY in valid JSON.',
-        },
-        {
-          role:    'user',
-          content: userPrompt,
-        },
-      ],
-      temperature: 0,
-    });
+    // ── Fallback: direct Pollinations API ────────────────────────────────
+    if (!rawText) {
+      const useAuth = Boolean(config && config.pollinationsKey);
+      const url     = useAuth ? POLLINATIONS_TEXT_AUTH : POLLINATIONS_TEXT_FREE;
+      const headers = { 'Content-Type': 'application/json' };
+      if (useAuth) {
+        headers['Authorization'] = `Bearer ${config.pollinationsKey}`;
+      }
 
-    let res;
-    try {
-      res = await fetch(url, { method: 'POST', headers, body });
-    } catch (fetchErr) {
-      console.error('[LiveWatch] runChatSentimentBatch network error:', fetchErr?.message);
-      return null;
+      const body = JSON.stringify({
+        model:    POLLINATIONS_TEXT_MODEL,
+        messages: chatMessages,
+        temperature: 0,
+      });
+
+      let res;
+      try {
+        res = await fetch(url, { method: 'POST', headers, body });
+      } catch (fetchErr) {
+        console.error('[LiveWatch] runChatSentimentBatch fallback network error:', fetchErr?.message);
+        return null;
+      }
+
+      if (!res.ok) {
+        console.error(
+          '[LiveWatch] runChatSentimentBatch fallback HTTP error:',
+          res.status,
+          await res.text().catch(() => '')
+        );
+        return null;
+      }
+
+      let responseJson;
+      try {
+        responseJson = await res.json();
+      } catch (parseErr) {
+        console.error('[LiveWatch] runChatSentimentBatch fallback JSON parse error:', parseErr?.message);
+        return null;
+      }
+
+      rawText =
+        responseJson?.choices?.[0]?.message?.content ||
+        responseJson?.choices?.[0]?.text ||
+        '';
     }
-
-    if (!res.ok) {
-      console.error(
-        '[LiveWatch] runChatSentimentBatch HTTP error:',
-        res.status,
-        await res.text().catch(() => '')
-      );
-      return null;
-    }
-
-    let responseJson;
-    try {
-      responseJson = await res.json();
-    } catch (parseErr) {
-      console.error('[LiveWatch] runChatSentimentBatch JSON parse error:', parseErr?.message);
-      return null;
-    }
-
-    const rawText =
-      responseJson?.choices?.[0]?.message?.content ||
-      responseJson?.choices?.[0]?.text ||
-      '';
 
     if (!rawText) {
       console.error('[LiveWatch] runChatSentimentBatch: empty content from model');

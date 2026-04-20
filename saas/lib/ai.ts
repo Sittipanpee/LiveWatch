@@ -5,7 +5,7 @@
  * the extension bundle.
  */
 
-const POLLINATIONS_URL = 'https://text.pollinations.ai/openai'
+const POLLINATIONS_URL = 'https://gen.pollinations.ai/v1/chat/completions'
 const POLLINATIONS_MODEL = 'gemini-flash-lite-3.1'
 
 export interface AnalysisFrame {
@@ -57,6 +57,8 @@ alert_flag rules:
 - true if phone_detected appears in 2 or more frames
 - true if eye_contact_score < 20
 - false otherwise
+
+activity_summary must be written in Thai language (ภาษาไทย), concise, 1-2 sentences.
 
 Respond with ONLY the JSON object. Do not wrap it in code blocks.`
 }

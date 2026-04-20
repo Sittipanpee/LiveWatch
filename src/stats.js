@@ -89,7 +89,7 @@ export async function handleStatsPoll(tabId, sessionId) {
 
     // Update chrome.storage.local: lastStats and statsBuffer ring buffer
     const { statsBuffer = [] } = await chrome.storage.local.get('statsBuffer');
-    const updatedBuffer = [...statsBuffer, stats].slice(-STATS_BUFFER_MAX);
+    const updatedBuffer = [...statsBuffer, { ...stats, session_id: sessionId }].slice(-STATS_BUFFER_MAX);
 
     const storageUpdate = {
       lastStats: stats,
@@ -164,7 +164,7 @@ async function persistStatSnapshot(sessionId, stats) {
     };
 
     const { error } = await supabaseInsert('stats_timeline', row);
-    if (error && error !== 'not_configured') {
+    if (error && !error.includes('not configured')) {
       console.error('[LiveWatch] persistStatSnapshot insert error:', error);
     }
 

@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { type UserTier } from '@/lib/tiers'
@@ -5,6 +6,7 @@ import PairingSection from './PairingSection'
 import TokensSection, { type TokenRow } from './TokensSection'
 import OnboardingChecklist, { type ChecklistSteps } from './OnboardingChecklist'
 import PlanCard from './PlanCard'
+import RecentSessions from './RecentSessions'
 
 interface ApiTokenDbRow {
   id: string
@@ -83,11 +85,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return (
-      <div className="max-w-xl mx-auto p-8">
-        <p>กรุณาเข้าสู่ระบบ</p>
-      </div>
-    )
+    redirect('/login')
   }
 
   const status = await loadUserStatus(user.id)
@@ -115,6 +113,7 @@ export default async function DashboardPage() {
 
       <PairingSection />
       <TokensSection initialTokens={tokens} />
+      <RecentSessions />
     </div>
   )
 }

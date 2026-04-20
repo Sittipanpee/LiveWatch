@@ -69,12 +69,51 @@ function formatThaiDate(date = new Date()) {
 // ---------------------------------------------------------------------------
 
 /**
- * Send a plain-text LINE push message to the configured user.
+ * Send a plain-text LINE push message.
+ *
+ * Tries the SaaS proxy first (if apiToken is configured), then falls back to
+ * direct LINE API credentials.  After SaaS migration the direct credentials
+ * are no longer stored, so the proxy path is the primary route.
  *
  * @param {string} text - Message text (supports LINE newlines via \n)
  * @returns {Promise<{ ok: boolean, error: string | null }>}
  */
 export async function sendLineMessage(text) {
+  // ── 1. Try SaaS proxy (primary path post-migration) ──────────────────────
+  try {
+    const { config } = await chrome.storage.local.get('config');
+    const apiToken = config?.apiToken;
+
+    if (apiToken) {
+      const proxyUrl = 'https://livewatch-psi.vercel.app/api/line/send';
+      const res = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (res.ok) {
+        return { ok: true, error: null };
+      }
+
+      // Non-OK from proxy — log but fall through to direct path
+      let detail = '';
+      try {
+        const json = await res.json();
+        detail = json.message || json.error || '';
+      } catch { /* ignore */ }
+      console.warn(
+        `[line.js] SaaS proxy error ${res.status}${detail ? ': ' + detail : ''} — trying direct LINE API`
+      );
+    }
+  } catch (proxyErr) {
+    console.warn('[line.js] SaaS proxy network error:', proxyErr?.message, '— trying direct LINE API');
+  }
+
+  // ── 2. Fallback: direct LINE API (legacy / self-hosted) ──────────────────
   let lineToken, lineUserId;
   try {
     ({ lineToken, lineUserId } = await getLineCredentials());

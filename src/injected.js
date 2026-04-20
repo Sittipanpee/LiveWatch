@@ -45,11 +45,47 @@
 
     ws.addEventListener('message', function (event) {
       try {
+        var payload;
+
+        if (typeof event.data === 'string') {
+          // String frame — pass through directly.
+          payload = event.data;
+        } else if (event.data instanceof ArrayBuffer) {
+          // Binary frame (ArrayBuffer) — attempt UTF-8 decode.
+          // TikTok sometimes sends JSON-like chat data as binary frames.
+          // If decoding produces valid text containing '{' (likely JSON),
+          // forward it. Otherwise it is probably protobuf — skip it.
+          try {
+            var decoded = new TextDecoder('utf-8', { fatal: true }).decode(event.data);
+            payload = (decoded && decoded.indexOf('{') !== -1) ? decoded : '__binary__';
+          } catch (_decodeErr) {
+            // Not valid UTF-8 — likely protobuf or other binary protocol.
+            payload = '__binary__';
+          }
+        } else if (event.data instanceof Blob) {
+          // Blob frame — read as text asynchronously.
+          // Use a self-invoking async pattern since addEventListener callback is sync.
+          event.data.text().then(function (text) {
+            try {
+              if (text && text.indexOf('{') !== -1) {
+                window.dispatchEvent(
+                  new CustomEvent('__livewatch_ws_msg', {
+                    detail: { url: String(url), data: text, ts: Date.now() },
+                  })
+                );
+              }
+            } catch (_) { /* swallow */ }
+          }).catch(function () { /* ignore Blob read errors */ });
+          return; // Blob handling is async — do not dispatch synchronously below.
+        } else {
+          payload = '__binary__';
+        }
+
         window.dispatchEvent(
           new CustomEvent('__livewatch_ws_msg', {
             detail: {
               url:  String(url),
-              data: typeof event.data === 'string' ? event.data : '__binary__',
+              data: payload,
               ts:   Date.now(),
             },
           })

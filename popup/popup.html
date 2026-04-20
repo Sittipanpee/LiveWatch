@@ -357,6 +357,40 @@
   <!-- Body -->
   <div class="body">
 
+    <!-- Live stats card -->
+    <div class="card" id="liveStatsCard" style="display:none">
+      <div class="card-title">สถิติไลฟ์ปัจจุบัน</div>
+      <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+        <div class="stat-cell">
+          <div class="stat-num teal" id="liveViewers">–</div>
+          <div class="stat-label">👥 ผู้ชม</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num teal" id="liveGmv">–</div>
+          <div class="stat-label">💰 GMV</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num teal" id="liveUnitsSold">–</div>
+          <div class="stat-label">📦 ยอดขาย</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num teal" id="liveLikes">–</div>
+          <div class="stat-label">❤️ ถูกใจ</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <div class="stat-cell" style="flex:1">
+          <div class="stat-num teal" id="liveClicks">–</div>
+          <div class="stat-label">🖱 คลิกสินค้า</div>
+        </div>
+        <div class="stat-cell" style="flex:1">
+          <div class="stat-num teal" id="liveCtr">–</div>
+          <div class="stat-label">📊 CTR</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:6px;text-align:right;" id="liveStatsTime"></div>
+    </div>
+
     <!-- Alert banner -->
     <div class="alert-banner" id="alertBanner">⚠️ พบพฤติกรรมผิดปกติ</div>
 

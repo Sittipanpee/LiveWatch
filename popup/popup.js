@@ -41,6 +41,15 @@ const thumbOverlay     = document.getElementById('thumbOverlay');
 const overlayText      = document.getElementById('overlayText');
 const thumbBadge       = document.getElementById('thumbBadge');
 
+const liveStatsCard = document.getElementById('liveStatsCard');
+const liveViewers   = document.getElementById('liveViewers');
+const liveGmv       = document.getElementById('liveGmv');
+const liveUnitsSold = document.getElementById('liveUnitsSold');
+const liveLikes     = document.getElementById('liveLikes');
+const liveClicks    = document.getElementById('liveClicks');
+const liveCtr       = document.getElementById('liveCtr');
+const liveStatsTime = document.getElementById('liveStatsTime');
+
 const statsCard    = document.getElementById('statsCard');
 const captureLog   = document.getElementById('captureLog');
 const logDot       = document.getElementById('logDot');
@@ -205,6 +214,44 @@ function updateCaptureStatus(status) {
   }
 }
 
+/**
+ * Format a stat value for display. Handles numbers, null, K/M suffixes.
+ * @param {number|string|null|undefined} val
+ * @param {string} [suffix]
+ * @returns {string}
+ */
+function formatStatDisplay(val, suffix) {
+  if (val == null || val === '') return '–';
+  if (typeof val === 'string') return val; // already formatted (GMV, CTR)
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + 'M' + (suffix || '');
+  if (val >= 1_000) return (val / 1_000).toFixed(1) + 'K' + (suffix || '');
+  return String(val) + (suffix || '');
+}
+
+function updateLiveStats(stats) {
+  if (!liveStatsCard) return;
+  if (!stats || (!stats.viewer_count && !stats.gmv && !stats.units_sold && !stats.like_count)) {
+    liveStatsCard.style.display = 'none';
+    return;
+  }
+
+  liveStatsCard.style.display = 'block';
+  liveViewers.textContent   = formatStatDisplay(stats.viewer_count);
+  liveGmv.textContent       = stats.gmv != null ? String(stats.gmv) : '–';
+  liveUnitsSold.textContent = formatStatDisplay(stats.units_sold);
+  liveLikes.textContent     = formatStatDisplay(stats.like_count);
+  liveClicks.textContent    = formatStatDisplay(stats.product_clicks);
+  liveCtr.textContent       = stats.ctr != null ? String(stats.ctr) : '–';
+
+  if (stats.ts) {
+    const d = new Date(stats.ts);
+    if (!isNaN(d.getTime())) {
+      liveStatsTime.textContent =
+        `อัพเดท ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')} (${stats.source ?? '?'})`;
+    }
+  }
+}
+
 function updateTodayStats(stats) {
   if (!stats || stats.bursts === 0) {
     statsCard.style.display = 'none';
@@ -236,13 +283,14 @@ function fetchStatus() {
 
 function fetchStorage() {
   chrome.storage.local.get(
-    ['lastAnalysis', 'lastFrame', 'todayStats', 'lastCaptureStatus', 'googleDriveExpired', 'driveQuotaExceeded'],
+    ['lastAnalysis', 'lastFrame', 'todayStats', 'lastCaptureStatus', 'googleDriveExpired', 'driveQuotaExceeded', 'lastStats'],
     (result) => {
       updateAnalysis(result.lastAnalysis ?? null);
       updateThumbnail(result.lastFrame ?? null);
       updateTodayStats(result.todayStats ?? null);
       updateCaptureStatus(result.lastCaptureStatus ?? null);
       updateDriveStatus(result.googleDriveExpired, result.driveQuotaExceeded);
+      updateLiveStats(result.lastStats ?? null);
     }
   );
 }

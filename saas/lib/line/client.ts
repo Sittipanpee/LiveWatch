@@ -1,7 +1,12 @@
 const LINE_API = 'https://api.line.me/v2/bot'
 
 export type LineTextMessage = { type: 'text'; text: string }
-export type LineMessage = LineTextMessage
+export type LineImageMessage = {
+  type: 'image'
+  originalContentUrl: string
+  previewImageUrl: string
+}
+export type LineMessage = LineTextMessage | LineImageMessage
 
 export interface LineApiResult {
   ok: boolean

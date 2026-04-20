@@ -4,10 +4,14 @@ import { getTierLimits, type UserTier } from '@/lib/tiers'
 import { analyzeFrames, type AnalysisFrame, type AnalysisResult } from '@/lib/ai'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 interface AnalyzeRequestBody {
   frames: AnalysisFrame[]
+  session_id?: string
+  captured_at?: string
+  thumbnail_url?: string
 }
 
 function isValidFrame(value: unknown): value is AnalysisFrame {
@@ -72,6 +76,21 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   await service.from('ai_analysis_logs').insert({ user_id: auth.userId })
+
+  await service.from('user_analysis_logs').insert({
+    user_id: auth.userId,
+    session_id: body.session_id ?? null,
+    captured_at: body.captured_at ?? new Date().toISOString(),
+    phone_detected: result.phone_detected ?? false,
+    eye_contact_score: result.eye_contact_score ?? 0,
+    smile_score: result.smile_score ?? 0,
+    product_presenting: result.product_presenting ?? false,
+    presenter_visible: result.presenter_visible ?? false,
+    activity_summary: result.activity_summary ?? null,
+    alert_flag: result.alert_flag ?? false,
+    thumbnail_url: body.thumbnail_url ?? null,
+    raw_scores: result,
+  })
 
   return Response.json(result)
 }

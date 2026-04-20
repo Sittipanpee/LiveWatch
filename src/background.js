@@ -21,6 +21,7 @@ import { finalizeSession } from './session_summary.js';
 import { getAuthToken, revokeAuthToken, sheetsAppend, getOrCreateDriveFolder, uploadFrameToDrive } from './sheets.js';
 import { TIER_LIMITS, getCachedTier, refreshTierCache, effectiveCaptureInterval } from './tier.js';
 import { analyzeFrames } from './ai.js';
+import { scheduleAnalyticsScrape } from './analytics.js';
 
 // ─── Logger (debug logs suppressed in production) ────────────────────────────
 
@@ -96,7 +97,69 @@ async function loadState() {
   }
 }
 
-// ─── Thumbnail upload (Supabase Storage + Google Drive in parallel) ───────────
+// ─── SaaS REST helpers ────────────────────────────────────────────────────────
+
+/**
+ * POST to the SaaS backend with the user's apiToken.
+ * Returns { data, error } — error is a string or null.
+ *
+ * @param {string} path - e.g. '/api/sessions'
+ * @param {object} body
+ * @returns {Promise<{data: object|null, error: string|null}>}
+ */
+async function saasPost(path, body) {
+  const { config = {} } = await chrome.storage.local.get('config');
+  const apiToken = config.apiToken;
+  const apiBase = (config.apiBase || 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+  if (!apiToken) return { data: null, error: 'no_token' };
+  try {
+    const res = await fetch(`${apiBase}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) return { data: null, error: data.error ?? String(res.status) };
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+}
+
+/**
+ * PATCH to the SaaS backend with the user's apiToken.
+ * Returns { data, error } — error is a string or null.
+ *
+ * @param {string} path - e.g. '/api/sessions/abc-123'
+ * @param {object} body
+ * @returns {Promise<{data: object|null, error: string|null}>}
+ */
+async function saasPatch(path, body) {
+  const { config = {} } = await chrome.storage.local.get('config');
+  const apiToken = config.apiToken;
+  const apiBase = (config.apiBase || 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+  if (!apiToken) return { data: null, error: 'no_token' };
+  try {
+    const res = await fetch(`${apiBase}${path}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) return { data: null, error: data.error ?? String(res.status) };
+    return { data, error: null };
+  } catch (e) {
+    return { data: null, error: e.message };
+  }
+}
+
+// ─── Thumbnail upload (SaaS proxy + Supabase Storage + Google Drive in parallel) ─
 
 /**
  * Upload a frame thumbnail to Supabase Storage and/or Google Drive,
@@ -122,6 +185,25 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
 
     const sheetsEnabled = !!(config.sheetsConnected && config.sheetsId);
     const supabaseEnabled = !!(supabaseUrl && supabaseKey);
+
+    // ── SaaS proxy upload (primary path) ────────────────────────────────────
+    const saasUpload = (() => {
+      if (!config.apiToken) return Promise.resolve(null);
+      const apiBase = (config.apiBase || 'https://livewatch-psi.vercel.app').replace(/\/$/, '');
+      return fetch(`${apiBase}/api/frames/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiToken}`,
+        },
+        body: JSON.stringify({ base64: base64Jpeg, session_id: sessionId, captured_at: capturedAt }),
+      })
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json().then((json) => json.url ?? null);
+        })
+        .catch(() => null);
+    })();
 
     // ── Supabase upload (async, returns URL or null) ─────────────────────────
     const supabaseUpload = supabaseEnabled
@@ -249,16 +331,17 @@ async function uploadThumbnail(base64Jpeg, sessionId, capturedAt) {
         })()
       : Promise.resolve(null);
 
-    // Run both in parallel; never block on either
-    const [supabaseUrl_result, driveUrl] = await Promise.allSettled([
+    // Run all three in parallel; never block on any
+    const [saasUrl, supabaseUrl_result, driveUrl] = await Promise.allSettled([
+      saasUpload,
       supabaseUpload,
       driveUpload,
     ]).then((results) =>
       results.map((r) => (r.status === 'fulfilled' ? r.value : null))
     );
 
-    // Prefer Supabase URL, fall back to Drive webViewLink
-    return supabaseUrl_result ?? driveUrl ?? null;
+    // Prefer SaaS URL, then Supabase URL, then Drive webViewLink
+    return saasUrl ?? supabaseUrl_result ?? driveUrl ?? null;
   } catch (e) {
     log.error('[LiveWatch] uploadThumbnail error:', e);
     return null;
@@ -675,16 +758,15 @@ async function startSession(tabId) {
       tab_url: tabUrl,
     };
 
-    const { data, error } = await supabaseInsert('sessions', sessionRow);
+    const { data, error } = await saasPost('/api/sessions', sessionRow);
 
-    if (error && error !== 'not_configured') {
-      log.error('[LiveWatch] startSession insert failed:', error);
+    if (error && error !== 'no_token') {
+      log.error('[LiveWatch] startSession SaaS insert failed:', error);
     }
 
-    // Use Supabase-assigned ID if available, otherwise generate a local UUID
-    // so the extension can still track sessions without a database backend.
-    const session = Array.isArray(data) ? data[0] : data;
-    const sessionId = session?.id ?? crypto.randomUUID();
+    // Use SaaS-assigned ID if available, otherwise generate a local UUID
+    // so the extension can still track sessions without a backend.
+    const sessionId = data?.id ?? crypto.randomUUID();
 
     // Dual-write to Google Sheets (fire-and-forget)
     sheetsWrite('sessions', { ...sessionRow, id: sessionId }).catch((e) =>
@@ -713,10 +795,13 @@ async function endSession(sessionId, startedAt) {
       );
     }
 
-    await supabaseUpdate('sessions', sessionId, {
+    const { error: endError } = await saasPatch(`/api/sessions/${sessionId}`, {
       ended_at: endedAt,
       duration_mins: durationMins,
     });
+    if (endError && endError !== 'no_token') {
+      log.error('[LiveWatch] endSession SaaS update failed:', endError);
+    }
 
     // Dual-write session end to Google Sheets (fire-and-forget)
     sheetsWrite('sessions', {
@@ -724,6 +809,10 @@ async function endSession(sessionId, startedAt) {
       ended_at: endedAt,
       duration_mins: durationMins,
     }).catch((e) => log.warn('[LiveWatch] Sheets write failed:', e));
+
+    // Clear lastBurstAt so the next session's first burst is not suppressed
+    // by stale timing from this session (Bug fix: P1).
+    await chrome.storage.local.remove('lastBurstAt');
   } catch (e) {
     log.error('[LiveWatch] endSession error:', e);
   }
@@ -845,8 +934,28 @@ async function scanTabs() {
     const liveTab = tabs.find((t) => TIKTOK_LIVE_PATTERN.test(t.url ?? ''));
 
     if (liveTab) {
-      if (state.liveTabId !== liveTab.id || state.status === STATUS.OFFLINE) {
-        await setLiveTab(liveTab.id);
+      // Verify a live video actually exists before going to MONITORING.
+      // The URL alone matches the streamer dashboard even when not live.
+      const hasVideo = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(liveTab.id, { type: 'PING' }, (res) => {
+          if (chrome.runtime.lastError || !res?.ok) {
+            resolve(false);
+            return;
+          }
+          // PING succeeded — content script is running, but ask if video exists
+          chrome.tabs.sendMessage(liveTab.id, { type: 'CHECK_VIDEO' }, (vRes) => {
+            resolve(!chrome.runtime.lastError && vRes?.hasVideo === true);
+          });
+        });
+      });
+
+      if (hasVideo) {
+        if (state.liveTabId !== liveTab.id || state.status === STATUS.OFFLINE) {
+          await setLiveTab(liveTab.id);
+        }
+      } else if (state.status !== STATUS.OFFLINE && state.liveTabId === liveTab.id) {
+        // Tab exists but no live video — go offline
+        await goOffline();
       }
     } else if (state.status !== STATUS.OFFLINE) {
       // No live tab found — go offline
@@ -859,7 +968,7 @@ async function scanTabs() {
 
 // ─── Capture burst ────────────────────────────────────────────────────────────
 
-async function triggerBurst() {
+async function triggerBurst({ force = false } = {}) {
   if (!state.liveTabId || state.status === STATUS.OFFLINE) return;
 
   // Don't interrupt an in-progress capture/analyze cycle
@@ -869,17 +978,25 @@ async function triggerBurst() {
   }
 
   // Tier floor: enforce minimum gap between bursts (fail-safe to gold).
-  try {
-    const tierLimits = await getCachedTier();
-    const { lastBurstAt = 0 } = await chrome.storage.local.get('lastBurstAt');
-    const minGapMs = tierLimits.minIntervalMinutes * 60 * 1000;
-    if (Date.now() - lastBurstAt < minGapMs) {
-      console.warn('[LiveWatch] tier floor: burst suppressed, too soon');
-      return;
+  // Skipped when force=true (manual test burst).
+  if (!force) {
+    try {
+      const tierLimits = await getCachedTier();
+      const { lastBurstAt = 0 } = await chrome.storage.local.get('lastBurstAt');
+      const minGapMs = tierLimits.minIntervalMinutes * 60 * 1000;
+      if (Date.now() - lastBurstAt < minGapMs) {
+        console.warn('[LiveWatch] tier floor: burst suppressed, too soon');
+        return;
+      }
+    } catch (e) {
+      log.warn('[LiveWatch] tier floor check failed:', e?.message);
     }
+  }
+
+  try {
     await chrome.storage.local.set({ lastBurstAt: Date.now() });
   } catch (e) {
-    log.warn('[LiveWatch] tier floor check failed:', e?.message);
+    log.warn('[LiveWatch] lastBurstAt save failed:', e?.message);
   }
 
   state.status = STATUS.CAPTURING;
@@ -922,8 +1039,17 @@ async function triggerBurst() {
   state.status = STATUS.ANALYZING;
   await saveState();
 
+  // Upload thumbnail first so the URL can be forwarded to the AI analyze call
+  const thumbnailUrl = response.frames?.[0]
+    ? await uploadThumbnail(response.frames[0], state.sessionId, capturedAt)
+    : null;
+
   log.info(`[LiveWatch] analyzeFrames: sending ${response.frames.length} frames to SaaS proxy...`);
-  const scores = await analyzeFrames(response.frames);
+  const scores = await analyzeFrames(response.frames, {
+    session_id:    state.sessionId ?? undefined,
+    captured_at:   capturedAt,
+    thumbnail_url: thumbnailUrl ?? undefined,
+  });
   log.info('[LiveWatch] analyzeFrames result:', scores);
 
   if (!scores) {
@@ -933,11 +1059,6 @@ async function triggerBurst() {
   }
 
   if (scores) {
-    // Upload first frame as thumbnail to Supabase Storage
-    const thumbnailUrl = response.frames?.[0]
-      ? await uploadThumbnail(response.frames[0], state.sessionId, capturedAt)
-      : null;
-
     // Accumulate today's stats in local storage
     const today = capturedAt.substring(0, 10);
     const { todayStats } = await chrome.storage.local.get('todayStats');
@@ -958,6 +1079,7 @@ async function triggerBurst() {
     // Append to recentCaptures ring buffer (used for hourly report)
     const { recentCaptures = [] } = await chrome.storage.local.get('recentCaptures');
     const newCapture = {
+      session_id:         state.sessionId,
       captured_at:        capturedAt,
       smile_score:        scores.smile_score        ?? 0,
       eye_contact_score:  scores.eye_contact_score  ?? 0,
@@ -1097,6 +1219,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           log.error('[LiveWatch] LIVE_ENDED finalizeSession error:', e);
         }
         await goOffline();
+        // Best-effort analytics scrape after session ends
+        if (s.sessionId) {
+          scheduleAnalyticsScrape(s.sessionId).catch((e) =>
+            log.warn('[LiveWatch] LIVE_ENDED analytics scrape error:', e)
+          );
+        }
       })().catch((e) =>
         log.error('[LiveWatch] LIVE_ENDED error:', e)
       );
@@ -1155,8 +1283,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === MSG.TEST_BURST) {
-      // Manual trigger for testing — runs immediately regardless of interval
-      triggerBurst()
+      // Manual trigger for testing — force=true bypasses tier floor
+      triggerBurst({ force: true })
         .then(() => sendResponse({ ok: true }))
         .catch((e) => sendResponse({ error: String(e) }));
       return true; // async

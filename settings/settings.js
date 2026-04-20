@@ -186,12 +186,33 @@ function saveSettings() {
 // ---------------------------------------------------------------------------
 
 function loadApiConfig() {
-  chrome.storage.local.get('config', (items) => {
+  chrome.storage.local.get(['config', 'userTier'], (items) => {
     if (chrome.runtime.lastError) return;
     const config = items.config ?? {};
     if (config.apiBase) apiBaseEl.value = config.apiBase;
     if (config.apiToken) apiTokenEl.value = config.apiToken;
+    updateConnectionUI(config, items.userTier);
   });
+}
+
+function updateConnectionUI(config, userTier) {
+  const connected = !!(config && config.apiToken);
+  const connectedEl = document.getElementById('connectedStatus');
+  const notConnectedEl = document.getElementById('notConnectedPrompt');
+  if (!connectedEl || !notConnectedEl) return;
+
+  if (connected) {
+    connectedEl.style.display = '';
+    notConnectedEl.style.display = 'none';
+    const tierLabel = document.getElementById('connectedTier');
+    if (tierLabel && userTier && userTier.tier) {
+      const names = { gold: 'Gold', platinum: 'Platinum', diamond: 'Diamond' };
+      tierLabel.textContent = `Tier: ${names[userTier.tier] || userTier.tier} • Min interval: ${userTier.minIntervalMinutes || '?'} min`;
+    }
+  } else {
+    connectedEl.style.display = 'none';
+    notConnectedEl.style.display = '';
+  }
 }
 
 async function testApiConnection() {
@@ -730,6 +751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   document.getElementById('btnSignUp')?.addEventListener('click', () => openWithExtId('/login'));
   document.getElementById('btnOpenDashboard')?.addEventListener('click', () => openWithExtId('/dashboard'));
+  document.getElementById('btnOpenDashboard2')?.addEventListener('click', () => openWithExtId('/dashboard'));
 
   // Listen for token updates pushed externally (from the dashboard via onMessageExternal)
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -742,6 +764,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         apiStatusEl.textContent = '✅ Token received — testing...';
         apiStatusEl.style.color = '#065f46';
       }
+      // Update connection UI immediately
+      chrome.storage.local.get('userTier', (items) => {
+        updateConnectionUI(newConfig, items?.userTier);
+      });
       testApiBtn?.click();
     }
   });

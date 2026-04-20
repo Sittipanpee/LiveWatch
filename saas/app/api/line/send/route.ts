@@ -35,7 +35,19 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'text required' }, { status: 400 })
   }
 
-  const messages: LineMessage[] = [{ type: 'text', text }]
+  const messages: LineMessage[] = []
+
+  // If imageUrl is provided, send image first then text
+  const imageUrl = typeof payload.imageUrl === 'string' ? payload.imageUrl.trim() : ''
+  if (imageUrl) {
+    messages.push({
+      type: 'image',
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+    })
+  }
+
+  messages.push({ type: 'text', text })
 
   const result = await linePush(auth.lineUserId, messages)
   if (!result.ok) {

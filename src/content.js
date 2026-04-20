@@ -273,11 +273,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  // Check if a live video element exists in the DOM
+  if (message?.type === 'CHECK_VIDEO') {
+    const video = document.querySelector('video');
+    const hasVideo = !!(video && video.readyState >= 2 && video.videoWidth > 0);
+    sendResponse({ hasVideo });
+    return false;
+  }
+
   if (message?.type === 'POLL_STATS') {
     pollStats()
       .then(result => sendResponse({ stats: result }))
       .catch(err => sendResponse({ error: String(err) }));
     return true; // keep channel open for async
+  }
+
+  if (message?.type === 'SCRAPE_ANALYTICS') {
+    try {
+      const result = scrapeAnalyticsTable();
+      sendResponse(result);
+    } catch (err) {
+      console.error('[LiveWatch] SCRAPE_ANALYTICS error:', err);
+      sendResponse({ error: String(err?.message ?? 'scrape_failed') });
+    }
+    return false;
   }
 
   if (message?.type !== MSG.CAPTURE_BURST) {
@@ -321,9 +340,41 @@ initLiveWatch();
 const STATS_API_ROOM = '/api/v1/streamer_desktop/live_room_info/get';
 const STATS_API_HOME = '/api/v1/streamer_desktop/home/info';
 const STATS_GRID_SEL = '#guide-step-2';
-const STATS_CARD_SEL = '[class*="metricCard"]';
-const STATS_VAL_SEL  = '[class*="data--"] > div';
-const STATS_LBL_SEL  = '[class*="name--"]';
+
+// TikTok uses CSS modules with hashed class names. These partial-match selectors
+// cover known variants. When TikTok changes class prefixes, add new entries here.
+const STATS_CARD_SELECTORS = [
+  '[class*="metricCard"]',
+  '[class*="metric-card"]',
+  '[class*="MetricCard"]',
+  '[class*="dataCard"]',
+  '[class*="data-card"]',
+  '[class*="statCard"]',
+  '[class*="stat-card"]',
+  '[class*="kpiCard"]',
+  '[class*="kpi-card"]',
+];
+
+const STATS_VAL_SELECTORS = [
+  '[class*="data--"] > div',
+  '[class*="data--"]',
+  '[class*="value--"]',
+  '[class*="metricValue"]',
+  '[class*="metric-value"]',
+  '[class*="number--"]',
+  '[class*="statValue"]',
+  '[class*="kpiValue"]',
+];
+
+const STATS_LBL_SELECTORS = [
+  '[class*="name--"]',
+  '[class*="label--"]',
+  '[class*="title--"]',
+  '[class*="metricName"]',
+  '[class*="metric-name"]',
+  '[class*="statLabel"]',
+  '[class*="kpiLabel"]',
+];
 
 // ---------------------------------------------------------------------------
 // Phase 3: parseStatValue helper
@@ -411,21 +462,60 @@ async function pollStats() {
 }
 
 /**
- * Scrape stats from DOM metric cards when API is unavailable.
- *
- * @param {string} ts - ISO timestamp string
- * @returns {{
- *   viewer_count: number|null,
- *   like_count: number|null,
- *   room_status: null,
- *   gmv: string|null,
- *   units_sold: number|null,
- *   product_clicks: number|null,
- *   ctr: string|null,
- *   source: 'dom',
- *   ts: string
- * }}
+ * Try multiple CSS selectors and return the first element that matches.
+ * @param {Element} parent
+ * @param {string[]} selectors
+ * @returns {Element|null}
  */
+function queryFirst(parent, selectors) {
+  for (const sel of selectors) {
+    const el = parent.querySelector(sel);
+    if (el) return el;
+  }
+  return null;
+}
+
+/**
+ * Try multiple CSS selectors and return all matching elements (de-duplicated).
+ * @param {string[]} selectors
+ * @param {Element} [scope]
+ * @returns {Element[]}
+ */
+function queryAllMulti(selectors, scope) {
+  const root = scope || document;
+  const seen = new Set();
+  const results = [];
+  for (const sel of selectors) {
+    try {
+      root.querySelectorAll(sel).forEach((el) => {
+        if (!seen.has(el)) {
+          seen.add(el);
+          results.push(el);
+        }
+      });
+    } catch (_) { /* invalid selector — skip */ }
+  }
+  return results;
+}
+
+// Thai label patterns for matching stat cards.
+// Each entry: [regex, field name]. Order matters — first match wins per card.
+//
+// IMPORTANT — avoid overly-broad Thai sub-words:
+//   "ดู"  is a sub-word of "ระยะเวลาในการดูเฉลี่ย" (avg watch time) → do NOT put "ดู" in viewer pattern
+//   "ยอด" is a sub-word of "ยอดคลิกสินค้า" (product clicks)         → do NOT put "ยอด" in GMV pattern
+const STAT_LABEL_PATTERNS = [
+  [/GMV|รายได้|revenue|Gross\s*Merch/i,                         'gmv'],
+  [/ผู้ชม|viewer|คนดู|จำนวนผู้ชม|ผู้ชมปัจจุบัน/i,              'viewer_count'],
+  [/ถูกใจ|like|ไลค์|หัวใจ/i,                                    'like_count'],
+  [/สินค้า.*ขาย|ขาย.*สินค้า|unit|ชิ้น|จำนวนขาย/i,              'units_sold'],
+  [/ยอดคลิก|คลิกสินค้า|click.*product|product.*click|กดสินค้า/i, 'product_clicks'],
+  [/CTR|อัตรา.*คลิก|แตะผ่าน|อัตราการแตะ|tap.through|conversion/i, 'ctr'],
+];
+
+// Guard: log "no cards found" only once to avoid console spam.
+let _domFallbackLoggedEmpty = false;
+
 function pollStatsDom(ts) {
   let viewer_count   = null;
   let like_count     = null;
@@ -435,31 +525,81 @@ function pollStatsDom(ts) {
   let ctr            = null;
 
   try {
-    const cards = document.querySelectorAll(STATS_CARD_SEL);
+    // --- Strategy 1: find cards inside #guide-step-2 using known card selectors ---
+    const gridEl = document.querySelector(STATS_GRID_SEL);
+    let cards = gridEl ? queryAllMulti(STATS_CARD_SELECTORS, gridEl) : [];
+
+    // --- Strategy 2: search full document if grid search found nothing ---
+    if (cards.length === 0) {
+      cards = queryAllMulti(STATS_CARD_SELECTORS);
+    }
+
+    // --- Strategy 3: broad fallback — any element with metric/stat/kpi in class ---
+    if (cards.length === 0) {
+      cards = queryAllMulti([
+        '[class*="metric"]',
+        '[class*="stat"]',
+        '[class*="kpi"]',
+        '[class*="Metric"]',
+        '[class*="Stat"]',
+      ]);
+    }
+
+    if (cards.length === 0) {
+      if (!_domFallbackLoggedEmpty) {
+        console.warn('[LiveWatch] pollStatsDom: no metric cards found with any selector strategy');
+        _domFallbackLoggedEmpty = true;
+      }
+    } else {
+      _domFallbackLoggedEmpty = false;
+    }
+
     cards.forEach((card) => {
-      const labelEl = card.querySelector(STATS_LBL_SEL);
-      const valueEl = card.querySelector(STATS_VAL_SEL);
+      const labelEl = queryFirst(card, STATS_LBL_SELECTORS);
+      const valueEl = queryFirst(card, STATS_VAL_SELECTORS);
       if (!labelEl || !valueEl) return;
 
       const label = labelEl.innerText?.trim() ?? '';
       const raw   = valueEl.innerText?.trim() ?? null;
 
-      if (/GMV|ยอด/.test(label)) {
-        // Preserve raw string for baht parsing in background
-        gmv = raw;
-      } else if (/ผู้ชม/.test(label)) {
-        viewer_count = parseStatValue(raw);
-      } else if (/ถูกใจ|like/i.test(label)) {
-        like_count = parseStatValue(raw);
-      } else if (/สินค้า.*ขาย|ขาย.*สินค้า/.test(label)) {
-        units_sold = parseStatValue(raw);
-      } else if (/คลิก/.test(label)) {
-        product_clicks = parseStatValue(raw);
-      } else if (/CTR|%/.test(label)) {
-        // Preserve raw string for percentage parsing in background
-        ctr = raw;
+      for (const [regex, field] of STAT_LABEL_PATTERNS) {
+        if (!regex.test(label)) continue;
+
+        if (field === 'gmv') {
+          gmv = raw; // Preserve raw string for baht parsing in background
+        } else if (field === 'viewer_count') {
+          viewer_count = parseStatValue(raw);
+        } else if (field === 'like_count') {
+          like_count = parseStatValue(raw);
+        } else if (field === 'units_sold') {
+          units_sold = parseStatValue(raw);
+        } else if (field === 'product_clicks') {
+          product_clicks = parseStatValue(raw);
+        } else if (field === 'ctr') {
+          ctr = raw; // Preserve raw string for percentage parsing in background
+        }
+        break; // first matching pattern wins for this card
       }
     });
+
+    // --- Strategy 4: direct text scrape if card selectors yielded nothing ---
+    // TikTok sometimes renders stats as plain text in the guide panel.
+    if (viewer_count === null && gmv === null) {
+      const guideText = (gridEl ?? document.querySelector('[class*="guide"]'))?.innerText ?? '';
+      if (guideText.length > 0) {
+        // Try to extract viewer count from patterns like "123 ผู้ชม" or "1.2K viewers"
+        const viewerMatch = guideText.match(/([\d,]+\.?\d*[KkMm]?)\s*(?:ผู้ชม|viewer|คนดู)/i);
+        if (viewerMatch) {
+          viewer_count = parseStatValue(viewerMatch[1]);
+        }
+        // Try GMV from patterns like "฿1,234" or "GMV 1,234"
+        const gmvMatch = guideText.match(/(?:GMV|ยอด|รายได้)\s*[:\s]*(฿?[\d,]+\.?\d*)/i)
+          || guideText.match(/(฿[\d,]+\.?\d*)/);
+        if (gmvMatch) {
+          gmv = gmvMatch[1];
+        }
+      }
+    }
   } catch (err) {
     console.error('[LiveWatch] pollStatsDom error:', err);
   }
@@ -487,6 +627,35 @@ function pollStatsDom(ts) {
  *
  * Safe to call multiple times — attaches only once via guard flag on window.
  */
+// Multiple fallback selectors for the chat feed container.
+// TikTok's DOM structure changes across versions — try each in order.
+const CHAT_FEED_SELECTORS = [
+  '#dashboard-guide-chat .overflow-y-hidden',
+  '#dashboard-guide-chat [class*="scrollable"]',
+  '#dashboard-guide-chat [class*="chatList"]',
+  '#dashboard-guide-chat [class*="chat-list"]',
+  '[class*="chatContainer"] [class*="scrollable"]',
+  '[class*="chatContainer"] .overflow-y-hidden',
+  '[class*="chat"] [class*="list"]',
+  '[class*="chat"] [class*="messageList"]',
+  '[class*="messageList"]',
+  '[class*="chatFeed"]',
+];
+
+/**
+ * Try each chat feed selector and return the first matching element.
+ * @returns {Element|null}
+ */
+function findChatFeedElement() {
+  for (const sel of CHAT_FEED_SELECTORS) {
+    try {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    } catch (_) { /* invalid selector — skip */ }
+  }
+  return null;
+}
+
 function initChatObserver() {
   // Guard against multiple calls (e.g. if onLiveStarted fires more than once).
   if (window.__livewatchChatObserving) return;
@@ -496,7 +665,7 @@ function initChatObserver() {
   window.addEventListener('__livewatch_ws_msg', handleWsMessage);
 
   // Try to find the chat feed element immediately.
-  const feedEl = document.querySelector('#dashboard-guide-chat .overflow-y-hidden');
+  const feedEl = findChatFeedElement();
   if (feedEl) {
     attachChatObserver(feedEl);
     return;
@@ -504,7 +673,7 @@ function initChatObserver() {
 
   // Not present yet — wait for it to appear in the DOM.
   const waitObserver = new MutationObserver(function () {
-    const el = document.querySelector('#dashboard-guide-chat .overflow-y-hidden');
+    const el = findChatFeedElement();
     if (!el) return;
     waitObserver.disconnect();
     attachChatObserver(el);
@@ -547,30 +716,61 @@ function attachChatObserver(feedEl) {
  * @param {Element} node
  * @returns {{ ts: number, username: string|null, text: string, msg_type: string, raw_node: string }|null}
  */
+// Selectors for extracting username from a chat message node.
+const CHAT_USERNAME_SELECTORS = [
+  '[class*="userName"]',
+  '[class*="username"]',
+  '[class*="name--"]',
+  '[class*="nickName"]',
+  '[class*="nickname"]',
+  '[class*="nick--"]',
+  '[class*="author"]',
+  '[class*="sender"]',
+  '[class*="user--"]',
+];
+
+// Selectors for extracting message text from a chat message node.
+const CHAT_TEXT_SELECTORS = [
+  '[class*="content"]',
+  '[class*="text--"]',
+  '[class*="comment"]',
+  '[class*="message--"]',
+  '[class*="msg--"]',
+  '[class*="chatContent"]',
+  '[class*="chat-content"]',
+  '[class*="body--"]',
+];
+
 function extractChatNode(node) {
   // Username — try several selector patterns used by TikTok Live
-  const usernameEl =
-    node.querySelector('[class*="userName"]') ||
-    node.querySelector('[class*="username"]') ||
-    node.querySelector('[class*="name--"]');
+  let usernameEl = null;
+  for (const sel of CHAT_USERNAME_SELECTORS) {
+    usernameEl = node.querySelector(sel);
+    if (usernameEl) break;
+  }
   const username = usernameEl ? (usernameEl.innerText?.trim() || null) : null;
 
   // Message text — try chat content selectors, fall back to full node text
-  const textEl =
-    node.querySelector('[class*="content"]') ||
-    node.querySelector('[class*="text--"]') ||
-    node.querySelector('[class*="comment"]');
+  let textEl = null;
+  for (const sel of CHAT_TEXT_SELECTORS) {
+    textEl = node.querySelector(sel);
+    if (textEl) break;
+  }
   const text = textEl
     ? (textEl.innerText?.trim() || null)
     : (node.innerText?.trim() || null);
 
   if (!text) return null;
 
+  // Detect order/purchase messages
+  const orderPatterns = /สั่งซื้อ|สั่งแล้ว|ordered|ซื้อแล้ว|จ่ายแล้ว|ชำระแล้ว|paid|bought|add.?to.?cart|หยิบใส่ตะกร้า/i;
+  const msg_type = !username ? 'system' : orderPatterns.test(text) ? 'order' : 'comment';
+
   return {
     ts:       Date.now(),
     username: username || null,
     text,
-    msg_type: username ? 'comment' : 'system',
+    msg_type,
     raw_node: node.innerText?.trim()?.substring(0, 200) ?? '',
   };
 }
@@ -583,8 +783,15 @@ function extractChatNode(node) {
  */
 function handleWsMessage(event) {
   try {
-    const data = event.detail && event.detail.data;
-    if (!data || data === '__binary__') return;
+    const detail = event.detail;
+    if (!detail) return;
+
+    let data = detail.data;
+    if (!data) return;
+
+    // '__binary_decoded__' is UTF-8 text decoded from binary frames by injected.js.
+    // '__binary__' means the frame could not be decoded (likely protobuf) — skip it.
+    if (data === '__binary__') return;
 
     let parsed;
     try {
@@ -598,7 +805,7 @@ function handleWsMessage(event) {
     if (!parsed.type && !parsed.messages) return;
 
     try {
-      chrome.runtime.sendMessage({ type: 'WS_MSG', payload: event.detail }, function () {
+      chrome.runtime.sendMessage({ type: 'WS_MSG', payload: detail }, function () {
         void chrome.runtime.lastError;
       });
     } catch (sendErr) {
@@ -607,6 +814,79 @@ function handleWsMessage(event) {
   } catch (_e) {
     // Silently swallow — must not crash the page.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: Analytics scraper (inlined — no imports allowed in content.js)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scrape the livestream analytics table from the TikTok analytics page.
+ * Looks for `#live-details-anchor` and extracts rows from the table within.
+ *
+ * @returns {{ rows: Array<object> } | { error: string }}
+ */
+function scrapeAnalyticsTable() {
+  const ANALYTICS_URL_PATTERN = /streamer\/compass\/livestream-analytics/;
+  if (!ANALYTICS_URL_PATTERN.test(location.href)) {
+    return { error: 'not_analytics_page' };
+  }
+
+  const anchor = document.querySelector('#live-details-anchor');
+  if (!anchor) {
+    return { error: 'table_not_found' };
+  }
+
+  const table = anchor.querySelector('table') || anchor.closest('table');
+  if (!table) {
+    // Fallback: try to find any table near the anchor
+    const nearby = anchor.parentElement?.querySelector('table');
+    if (!nearby) {
+      return { error: 'table_not_found' };
+    }
+    return scrapeTable(nearby);
+  }
+
+  return scrapeTable(table);
+}
+
+/**
+ * Extract rows from an HTML table element.
+ *
+ * @param {HTMLTableElement} table
+ * @returns {{ rows: Array<object> }}
+ */
+function scrapeTable(table) {
+  const headers = [];
+  const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+  if (headerRow) {
+    headerRow.querySelectorAll('th, td').forEach(function (cell) {
+      headers.push(cell.innerText?.trim() ?? '');
+    });
+  }
+
+  const rows = [];
+  const bodyRows = table.querySelectorAll('tbody tr');
+  bodyRows.forEach(function (tr) {
+    const cells = [];
+    tr.querySelectorAll('td').forEach(function (td) {
+      cells.push(td.innerText?.trim() ?? '');
+    });
+    if (cells.length === 0) return;
+
+    if (headers.length > 0 && headers.length === cells.length) {
+      const rowObj = {};
+      headers.forEach(function (h, i) {
+        rowObj[h] = cells[i];
+      });
+      rows.push(rowObj);
+    } else {
+      rows.push({ values: cells });
+    }
+  });
+
+  console.info('[LiveWatch] scrapeAnalyticsTable: found', rows.length, 'rows');
+  return { rows };
 }
 
 } // end guard: window.__livewatchContentLoaded

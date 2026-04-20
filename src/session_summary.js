@@ -9,7 +9,7 @@
  * chrome.storage.local.
  */
 
-import { supabaseSelect, supabaseUpdate } from './supabase.js';
+import { supabaseUpdate } from './supabase.js';
 import { sendLineMessage } from './line.js';
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ function formatThaiDateTime(date = new Date()) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Build a session summary object by querying Supabase and local storage.
+ * Build a session summary object from local chrome.storage.local data.
  *
  * @param {string} sessionId
  * @param {object} config - Extension config (not used directly; credentials are
@@ -93,29 +93,20 @@ function formatThaiDateTime(date = new Date()) {
  * @returns {Promise<object>} summary object
  */
 export async function buildSessionSummary(sessionId, config) {
-  // 1. Query stats_timeline for this session (ordered ASC by polled_at)
-  const { data: statsRows, error: statsErr } = await supabaseSelect(
-    'stats_timeline',
-    { session_id: `eq.${sessionId}`, order: 'polled_at.asc' }
-  );
+  // 1. Read stats from local storage (statsBuffer) instead of Supabase.
+  //    Post-SaaS migration: Supabase credentials are no longer stored locally,
+  //    so we use the local statsBuffer that stats.js already maintains.
+  const { statsBuffer } = await chrome.storage.local.get('statsBuffer');
+  const timeline = Array.isArray(statsBuffer)
+    ? statsBuffer.filter((r) => r.session_id === sessionId)
+    : [];
 
-  if (statsErr) {
-    console.error('[LiveWatch] buildSessionSummary: stats_timeline query error:', statsErr);
-  }
-
-  const timeline = Array.isArray(statsRows) ? statsRows : [];
-
-  // 2. Query analysis_logs for this session
-  const { data: analysisRows, error: analysisErr } = await supabaseSelect(
-    'analysis_logs',
-    { session_id: `eq.${sessionId}` }
-  );
-
-  if (analysisErr) {
-    console.error('[LiveWatch] buildSessionSummary: analysis_logs query error:', analysisErr);
-  }
-
-  const logs = Array.isArray(analysisRows) ? analysisRows : [];
+  // 2. Read AI analysis results from local storage (recentCaptures)
+  //    instead of querying analysis_logs in Supabase.
+  const { recentCaptures } = await chrome.storage.local.get('recentCaptures');
+  const logs = Array.isArray(recentCaptures)
+    ? recentCaptures.filter((r) => r.session_id === sessionId)
+    : [];
 
   // 3. Read lastChatSentiment from chrome.storage.local
   const { lastChatSentiment } = await chrome.storage.local.get('lastChatSentiment');
@@ -298,7 +289,7 @@ export async function finalizeSession(sessionId, config) {
           chat_sentiment_summary: summary.chatSentiment,
         }
       );
-      if (updateErr && updateErr !== 'not_configured') {
+      if (updateErr && !updateErr.includes('not configured')) {
         console.error('[LiveWatch] finalizeSession: supabaseUpdate error:', updateErr);
       }
     } catch (e) {

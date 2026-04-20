@@ -29,9 +29,10 @@
  * Returns null on any failure (no auth, rate limited, network error).
  *
  * @param {string[]} base64Frames
+ * @param {{ session_id?: string, captured_at?: string, thumbnail_url?: string }} [meta]
  * @returns {Promise<AnalysisResult|null>}
  */
-export async function analyzeFrames(base64Frames) {
+export async function analyzeFrames(base64Frames, meta = {}) {
   if (!Array.isArray(base64Frames) || base64Frames.length === 0) {
     return null;
   }
@@ -44,6 +45,13 @@ export async function analyzeFrames(base64Frames) {
     return null;
   }
 
+  const payload = {
+    frames: base64Frames.map((b64) => ({ base64: b64 })),
+    ...(meta.session_id   !== undefined && { session_id:    meta.session_id }),
+    ...(meta.captured_at  !== undefined && { captured_at:   meta.captured_at }),
+    ...(meta.thumbnail_url !== undefined && { thumbnail_url: meta.thumbnail_url }),
+  };
+
   try {
     const res = await fetch(`${apiBase}/api/ai/analyze`, {
       method: 'POST',
@@ -51,9 +59,7 @@ export async function analyzeFrames(base64Frames) {
         'Authorization': `Bearer ${apiToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        frames: base64Frames.map((b64) => ({ base64: b64 })),
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (res.status === 429) {
