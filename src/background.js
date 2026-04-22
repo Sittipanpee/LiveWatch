@@ -504,11 +504,22 @@ async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
     return '█'.repeat(filled) + '░'.repeat(5 - filled) + ` ${score}`;
   };
 
+  // Read current live stats (viewer count + GMV) from storage
+  const { lastStats } = await chrome.storage.local.get('lastStats');
+  const viewerStr = lastStats?.viewer_count != null
+    ? `👥 ผู้ชม: ${lastStats.viewer_count.toLocaleString()} คน`
+    : null;
+  const gmvStr = lastStats?.gmv != null
+    ? `💰 GMV: ${lastStats.gmv}`
+    : null;
+
   const lines = [
     scores.alert_flag ? `⚠️ แจ้งเตือน!` : `✅ ปกติ`,
     `📸 ผลวิเคราะห์ไลฟ์ (${timeStr} น.)`,
+    viewerStr,
+    gmvStr,
     ``,
-    `😊 ยิ้มแย้ม    ${bar(scores.smile_score        ?? 0)}`,
+    `🎭 อารมณ์      ${bar(scores.smile_score        ?? 0)}`,
     `👁 มองกล้อง   ${bar(scores.eye_contact_score   ?? 0)}`,
     `⚡ พลังงาน    ${bar(scores.energy_level         ?? 0)}`,
     `🎯 Engage     ${bar(scores.engagement_score     ?? 0)}`,
@@ -516,10 +527,6 @@ async function sendCaptureAlert(scores, capturedAt, thumbnailUrl) {
     ``,
     scores.phone_detected     ? `📱 ⚠️ ถือมือถือ!`    : `📱 ไม่ถือมือถือ`,
     scores.product_presenting ? `📦 กำลังเสนอสินค้า`  : `📦 ยังไม่เสนอสินค้า`,
-    scores.demo_in_progress   ? `🎬 กำลัง demo สินค้า` : null,
-    scores.distracted         ? `😶 ⚠️ ไม่ engage`      : null,
-    scores.multiple_people    ? `👥 มีคนอื่นในเฟรม`    : null,
-    !scores.background_clean  ? `🗂 พื้นหลังรกเกินไป`   : null,
   ].filter(Boolean);
 
   if (scores.activity_summary) {

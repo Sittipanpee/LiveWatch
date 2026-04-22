@@ -33,6 +33,21 @@ function formatGmv(satang) {
 }
 
 /**
+ * Parse a Thai baht string (e.g. "฿1,234.56") into integer satang (× 100).
+ * Returns null for null/undefined/unparseable input.
+ *
+ * @param {string|null|undefined} str
+ * @returns {number|null}
+ */
+function parseBahtToSatang(str) {
+  if (str == null) return null;
+  const cleaned = String(str).replace(/฿/g, '').replace(/,/g, '').trim();
+  const parsed = parseFloat(cleaned);
+  if (isNaN(parsed)) return null;
+  return Math.round(parsed * 100);
+}
+
+/**
  * Return the mean of numeric values in an array, rounded to 1 decimal.
  * Null/undefined values are filtered out.
  * Returns null if the filtered array is empty.
@@ -128,8 +143,11 @@ export async function buildSessionSummary(sessionId, config) {
     .filter((v) => v != null);
   const peak_viewers = viewerCounts.length > 0 ? Math.max(...viewerCounts) : null;
 
+  // statsBuffer entries store raw `gmv` string (e.g. "฿1,234.56") from the
+  // content script. Parse each entry — fall back to pre-converted gmv_satang
+  // if present (future-proof for direct DB reads).
   const gmvValues = timeline
-    .map((r) => r.gmv_satang)
+    .map((r) => r.gmv_satang ?? parseBahtToSatang(r.gmv))
     .filter((v) => v != null);
   const final_gmv_satang = gmvValues.length > 0 ? gmvValues[gmvValues.length - 1] : null;
 
@@ -184,7 +202,7 @@ export async function sendSessionSummaryToLine(summary, config) {
       ? `${summary.final_units_sold} ชิ้น`
       : 'ไม่มีข้อมูล';
 
-    const smileStr = summary.avg_smile_score != null
+    const sentimentStr = summary.avg_smile_score != null
       ? `${summary.avg_smile_score}/100`
       : 'ไม่มีข้อมูล';
 
@@ -201,7 +219,7 @@ export async function sendSessionSummaryToLine(summary, config) {
       `💰 GMV รวม: ${gmvStr}`,
       `📦 ยอดขาย: ${unitsSoldStr}`,
       ``,
-      `😊 ยิ้มแย้มเฉลี่ย: ${smileStr}`,
+      `🎭 อารมณ์เฉลี่ย: ${sentimentStr}`,
       `👁 มองกล้องเฉลี่ย: ${eyeStr}`,
       `📱 จับมือถือ: ${summary.phone_incidents} ครั้ง`,
       `⚠️ แจ้งเตือน: ${summary.alert_count} ครั้ง (${summary.total_bursts} รอบทั้งหมด)`,

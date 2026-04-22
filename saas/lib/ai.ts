@@ -52,19 +52,54 @@ The JSON must conform exactly to this schema:
   "alert_flag": boolean
 }
 
-Field definitions:
+Field definitions and scoring rubrics:
+
 - phone_detected: TRUE only if the PRESENTER (the main person on camera) is
   visibly holding a phone in their hand OR actively looking down at a phone.
   FALSE if a phone or device is merely visible somewhere in the background,
   on a table, on a shelf, or in the periphery — the presenter must be the one
   physically gripping or using it. When in doubt, default to FALSE.
-- eye_contact_score: 0-100, how consistently the presenter looks at the camera lens.
-- smile_score: 0-100, warmth and friendliness of facial expression.
-- energy_level: 0-100, overall physical energy and enthusiasm.
-- engagement_score: 0-100, how engaging the presentation appears overall.
-- lighting_quality: 0-100, evenness and brightness of lighting on the presenter's face.
-- product_presenting: TRUE if the presenter is actively showing or demonstrating a product.
+
+- smile_score (PRESENTER SENTIMENT — not just smile detection):
+  Measures overall positive, welcoming mood. A presenter who is speaking,
+  explaining, or demonstrating with a neutral-open mouth expression should
+  score 50-65. Only score below 40 if the presenter looks visibly bored,
+  annoyed, tired, or expressionless for the whole frame.
+  0-30  = clearly negative: frowning, grumpy, visibly upset or bored
+  31-55 = neutral: talking/explaining with no strong emotional signal
+  56-75 = warm: engaged tone, slight smile, positive body language
+  76-100 = very positive: bright smile, enthusiastic, high energy presence
+
+- eye_contact_score: How consistently the presenter looks toward the camera lens.
+  0-30  = never looks at camera; always looking down, sideways, or at phone
+  31-55 = occasional eye contact, frequently distracted
+  56-75 = mostly looks at camera with brief natural breaks
+  76-100 = strong, consistent eye contact with the camera
+
+- energy_level: Overall physical energy, animation, and vocal enthusiasm.
+  0-30  = sluggish, still, low voice, disengaged
+  31-55 = moderate; moving and talking but without notable enthusiasm
+  56-75 = active, varied gestures, clear voice
+  76-100 = high energy, expressive, dynamic presentation
+
+- engagement_score: How compelling the overall presentation looks to a viewer.
+  0-30  = boring or off-putting; viewers would likely leave
+  31-55 = acceptable but unremarkable
+  56-75 = interesting, holds attention
+  76-100 = very engaging; pulls viewers in
+
+- lighting_quality: Evenness and brightness of light on the presenter's face.
+  0-30  = dark, harsh shadows, or blown-out highlights obscure the face
+  31-55 = uneven but visible
+  56-75 = good, even light with minor issues
+  76-100 = professional, flattering, even illumination
+
+- product_presenting: TRUE if the presenter is actively showing, holding, or
+  demonstrating a product toward the camera. FALSE if products are only
+  visible in the background or on a shelf.
+
 - presenter_visible: TRUE if a human presenter is clearly visible in the frame.
+
 - activity_summary: 1-2 sentences in Thai (ภาษาไทย) describing what is happening.
 
 alert_flag rules:
