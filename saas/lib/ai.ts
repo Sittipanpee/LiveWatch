@@ -35,10 +35,11 @@ interface PollinationsResponse {
 }
 
 function buildSystemPrompt(): string {
-  return `You are a TikTok Live stream quality analyst.
-Analyse the provided frames and return ONLY a valid JSON object — no markdown fences, no prose.
-The JSON must conform exactly to this schema:
+  return `You are an AI analyst for a Thai TikTok Live beauty product stream.
+The presenter sells Thai beauty products from behind a display table.
+Return ONLY a valid JSON object — no markdown fences, no prose.
 
+The JSON must conform exactly to this schema:
 {
   "phone_detected": boolean,
   "eye_contact_score": number,
@@ -48,64 +49,56 @@ The JSON must conform exactly to this schema:
   "lighting_quality": number,
   "product_presenting": boolean,
   "presenter_visible": boolean,
-  "activity_summary": string,
-  "alert_flag": boolean
+  "activity_summary": string
 }
 
-Field definitions and scoring rubrics:
+ABSENT-PRESENTER RULE: If presenter_visible is FALSE (e.g. camera is zoomed on products
+with no person visible), set all numeric scores to 0 and all other booleans to false.
+activity_summary may still describe what is in frame.
 
-- phone_detected: TRUE only if the PRESENTER (the main person on camera) is
-  visibly holding a phone in their hand OR actively looking down at a phone.
-  FALSE if a phone or device is merely visible somewhere in the background,
-  on a table, on a shelf, or in the periphery — the presenter must be the one
-  physically gripping or using it. When in doubt, default to FALSE.
+Field definitions:
 
-- smile_score (PRESENTER SENTIMENT — not just smile detection):
-  Measures overall positive, welcoming mood. A presenter who is speaking,
-  explaining, or demonstrating with a neutral-open mouth expression should
-  score 50-65. Only score below 40 if the presenter looks visibly bored,
-  annoyed, tired, or expressionless for the whole frame.
-  0-30  = clearly negative: frowning, grumpy, visibly upset or bored
-  31-55 = neutral: talking/explaining with no strong emotional signal
-  56-75 = warm: engaged tone, slight smile, positive body language
-  76-100 = very positive: bright smile, enthusiastic, high energy presence
+phone_detected
+  TRUE if the main presenter is physically holding a smartphone or actively reading one.
+  FALSE if any device is visible on a shelf, table, or background but NOT in the presenter's hand.
+  Default FALSE when unclear.
 
-- eye_contact_score: How consistently the presenter looks toward the camera lens.
-  0-30  = never looks at camera; always looking down, sideways, or at phone
-  31-55 = occasional eye contact, frequently distracted
-  56-75 = mostly looks at camera with brief natural breaks
-  76-100 = strong, consistent eye contact with the camera
+smile_score  (SENTIMENT — not just smile detection)
+  Positive mood and welcoming energy visible in the presenter's face and body language.
+  HIGH (70+): bright expression, warm energy, animated gestures, clear enthusiasm
+  MEDIUM (45-65): neutral or focused expression while talking or demonstrating — this is NORMAL during explanations; do NOT penalise open-mouth talking
+  LOW (<40): visibly bored, flat affect, frowning, disengaged, or irritated for the whole frame
 
-- energy_level: Overall physical energy, animation, and vocal enthusiasm.
-  0-30  = sluggish, still, low voice, disengaged
-  31-55 = moderate; moving and talking but without notable enthusiasm
-  56-75 = active, varied gestures, clear voice
-  76-100 = high energy, expressive, dynamic presentation
+eye_contact_score
+  How consistently the presenter looks toward the camera lens.
+  HIGH (70+): frequent, natural camera-facing delivery
+  MEDIUM (40-65): mixed — some direct looks, some glancing down or away
+  LOW (<40): rarely or never looks at camera; consistently distracted or looking elsewhere
 
-- engagement_score: How compelling the overall presentation looks to a viewer.
-  0-30  = boring or off-putting; viewers would likely leave
-  31-55 = acceptable but unremarkable
-  56-75 = interesting, holds attention
-  76-100 = very engaging; pulls viewers in
+energy_level  (presenter's OWN physical energy — not viewer perception)
+  Movement, hand gestures, vocal pace, and physical liveliness.
+  HIGH (70+): active body movement, expressive hands, animated delivery
+  MEDIUM (40-65): calm but present; speaking clearly with some natural movement
+  LOW (<40): still, slow, fatigued, or robotic appearance
 
-- lighting_quality: Evenness and brightness of light on the presenter's face.
-  0-30  = dark, harsh shadows, or blown-out highlights obscure the face
-  31-55 = uneven but visible
-  56-75 = good, even light with minor issues
-  76-100 = professional, flattering, even illumination
+engagement_score  (how compelling this looks to a VIEWER — independent of energy_level)
+  Consider: is interesting content on screen? is a product being shown? is there visual variety?
+  HIGH (70+): active product demo, close-up of product, variety of content or angles
+  MEDIUM (40-65): presenter talking at camera with no notable visual variation
+  LOW (<40): dead air, nothing happening, off-frame activity, or static boring scene
 
-- product_presenting: TRUE if the presenter is actively showing, holding, or
-  demonstrating a product toward the camera. FALSE if products are only
-  visible in the background or on a shelf.
+lighting_quality
+  Evenness and brightness of illumination on the presenter's face.
+  HIGH (70+): even, flattering light — ring light or softbox quality
+  MEDIUM (40-65): workable light with minor shadows or slight overexposure
+  LOW (<40): face obscured by harsh shadows, too dark, or severely overexposed
 
-- presenter_visible: TRUE if a human presenter is clearly visible in the frame.
+product_presenting
+  TRUE if presenter is actively showing, holding up, or demonstrating a product toward camera.
+  FALSE if products are only visible on shelves or the table without being actively featured.
 
-- activity_summary: 1-2 sentences in Thai (ภาษาไทย) describing what is happening.
-
-alert_flag rules:
-- true if phone_detected appears in 2 or more frames
-- true if eye_contact_score < 20
-- false otherwise
+activity_summary
+  1-2 sentences in Thai (ภาษาไทย) describing what the presenter is doing.
 
 Respond with ONLY the JSON object. Do not wrap it in code blocks.`
 }
@@ -119,7 +112,7 @@ interface UserContentBlock {
 function buildUserContent(frames: AnalysisFrame[]): UserContentBlock[] {
   const text: UserContentBlock = {
     type: 'text',
-    text: `Analyse these ${frames.length} consecutive frame(s) from a TikTok Live stream. Score each dimension across all frames combined and return the JSON schema described.`,
+    text: `Analyse these ${frames.length} consecutive frame(s) from a Thai TikTok Live beauty product stream. Score each dimension across all frames combined and return the JSON schema described.`,
   }
   const images: UserContentBlock[] = frames.map((f) => ({
     type: 'image_url',
@@ -175,19 +168,24 @@ function clampScore(value: unknown): number {
 }
 
 function normalise(raw: Record<string, unknown>, frameCount: number): AnalysisResult {
-  const phone_detected = Boolean(raw.phone_detected)
-  const eye_contact_score = clampScore(raw.eye_contact_score)
-  const smile_score = clampScore(raw.smile_score)
-  const energy_level = clampScore(raw.energy_level)
-  const engagement_score = clampScore(raw.engagement_score)
-  const lighting_quality = clampScore(raw.lighting_quality)
-  const product_presenting = Boolean(raw.product_presenting)
   const presenter_visible = Boolean(raw.presenter_visible)
+  const phone_detected = Boolean(raw.phone_detected)
+
+  // When no presenter is visible, all scores are meaningless — zero them out.
+  const eye_contact_score = presenter_visible ? clampScore(raw.eye_contact_score) : 0
+  const smile_score       = presenter_visible ? clampScore(raw.smile_score)       : 0
+  const energy_level      = presenter_visible ? clampScore(raw.energy_level)      : 0
+  const engagement_score  = clampScore(raw.engagement_score) // engagement can be non-zero for product close-ups
+  const lighting_quality  = clampScore(raw.lighting_quality)
+  const product_presenting = Boolean(raw.product_presenting)
   const activity_summary =
     typeof raw.activity_summary === 'string' ? raw.activity_summary : ''
 
+  // alert_flag is computed server-side only (not sent to model).
+  // phone alert: detected AND burst had multiple frames (reduces single-frame false positives)
+  // eye contact alert: consistently not looking at camera
   const alertByPhone = phone_detected && frameCount >= 2
-  const alertByEyeContact = eye_contact_score < 20
+  const alertByEyeContact = eye_contact_score < 30
   const alert_flag = alertByPhone || alertByEyeContact
 
   return {
