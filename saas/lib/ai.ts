@@ -52,13 +52,25 @@ The JSON must conform exactly to this schema:
   "alert_flag": boolean
 }
 
-All numeric scores are 0-100.
+Field definitions:
+- phone_detected: TRUE only if the PRESENTER (the main person on camera) is
+  visibly holding a phone in their hand OR actively looking down at a phone.
+  FALSE if a phone or device is merely visible somewhere in the background,
+  on a table, on a shelf, or in the periphery — the presenter must be the one
+  physically gripping or using it. When in doubt, default to FALSE.
+- eye_contact_score: 0-100, how consistently the presenter looks at the camera lens.
+- smile_score: 0-100, warmth and friendliness of facial expression.
+- energy_level: 0-100, overall physical energy and enthusiasm.
+- engagement_score: 0-100, how engaging the presentation appears overall.
+- lighting_quality: 0-100, evenness and brightness of lighting on the presenter's face.
+- product_presenting: TRUE if the presenter is actively showing or demonstrating a product.
+- presenter_visible: TRUE if a human presenter is clearly visible in the frame.
+- activity_summary: 1-2 sentences in Thai (ภาษาไทย) describing what is happening.
+
 alert_flag rules:
 - true if phone_detected appears in 2 or more frames
 - true if eye_contact_score < 20
 - false otherwise
-
-activity_summary must be written in Thai language (ภาษาไทย), concise, 1-2 sentences.
 
 Respond with ONLY the JSON object. Do not wrap it in code blocks.`
 }
