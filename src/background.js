@@ -22,6 +22,8 @@ import { getAuthToken, revokeAuthToken, sheetsAppend, getOrCreateDriveFolder, up
 import { TIER_LIMITS, getCachedTier, refreshTierCache, effectiveCaptureInterval } from './tier.js';
 import { analyzeFrames } from './ai.js';
 import { scheduleAnalyticsScrape } from './analytics.js';
+import { sendWeeklyRollupToLine } from './reports/weekly_rollup.js';
+import { sendMonthlyRollupToLine } from './reports/monthly_rollup.js';
 
 // ─── Logger (debug logs suppressed in production) ────────────────────────────
 
@@ -44,12 +46,20 @@ const TIKTOK_LIVE_PATTERN = /shop\.tiktok\.com\/streamer\/live/;
 const CAPTURE_INTERVAL_MINUTES = 8;
 const FRAMES_PER_BURST = 3;
 const FRAME_GAP_MS = 5000;
-const ALARM_CAPTURE      = 'captureBurst';
-const ALARM_DAILY        = 'dailySummary';
-const ALARM_HOURLY       = 'hourlySummary';
-const ALARM_SCAN         = 'scanTabs';
-const ALARM_REFRESH_TIER = 'refreshTier';
-const ALARM_GMV_SNAPSHOT = 'gmvSnapshot';
+const ALARM_CAPTURE        = 'captureBurst';
+const ALARM_DAILY          = 'dailySummary';
+const ALARM_HOURLY         = 'hourlySummary';
+const ALARM_SCAN           = 'scanTabs';
+const ALARM_REFRESH_TIER   = 'refreshTier';
+const ALARM_GMV_SNAPSHOT   = 'gmvSnapshot';
+const ALARM_WEEKLY_ROLLUP  = 'weeklyRollup';
+const ALARM_MONTHLY_ROLLUP = 'monthlyRollup';
+
+// Asia/Bangkok UTC offset in ms (UTC+7)
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+// Rollup fire time — 09:00 Bangkok
+const ROLLUP_HOUR_BANGKOK = 9;
 
 // GMV timeline ring-buffer cap: 720 entries = 12 hours at 1-min intervals
 const GMV_TIMELINE_MAX = 720;
@@ -774,6 +784,132 @@ async function clearGmvSnapshotAlarm() {
   }
 }
 
+// ─── Rollup alarm helpers ─────────────────────────────────────────────────────
+
+/**
+ * Compute the number of minutes from now (UTC) until the next occurrence of
+ * targetHour:00 in Asia/Bangkok (UTC+7) on the target day of week.
+ *
+ * When targetDow is null, computes delay to the next occurrence of targetHour
+ * on any day (i.e., daily).
+ *
+ * When targetDow is 0–6 (JS getDay() convention: 0=Sun, 1=Mon … 6=Sat),
+ * computes delay to the next occurrence of that weekday at targetHour.
+ *
+ * Algorithm:
+ *  1. Determine current Bangkok wall-clock time by shifting epoch by +7h.
+ *  2. Compute the target Bangkok datetime.
+ *  3. Return positive difference in minutes.
+ *
+ * @param {number} targetHour - 0-23 Bangkok hour
+ * @param {number|null} [targetDow] - JS day-of-week (0=Sun…6=Sat) or null for daily
+ * @returns {number} delay in minutes (always >= 1)
+ */
+function minutesUntilBangkokTime(targetHour, targetDow = null) {
+  const nowUtcMs  = Date.now();
+  // Bangkok wall-clock expressed as a UTC Date (so getUTC* gives Bangkok values)
+  const bkkNow    = new Date(nowUtcMs + BANGKOK_OFFSET_MS);
+  const bkkHour   = bkkNow.getUTCHours();
+  const bkkMinute = bkkNow.getUTCMinutes();
+  const bkkDow    = bkkNow.getUTCDay(); // 0=Sun … 6=Sat
+
+  // Build a candidate target date at targetHour:00 today (Bangkok)
+  const candidate = new Date(bkkNow);
+  candidate.setUTCHours(targetHour, 0, 0, 0);
+
+  if (targetDow === null) {
+    // Daily: advance by 1 day if today's slot already passed
+    if (candidate <= bkkNow) {
+      candidate.setUTCDate(candidate.getUTCDate() + 1);
+    }
+  } else {
+    // Weekly: advance day-by-day until we land on the target DOW
+    let daysAhead = (targetDow - bkkDow + 7) % 7;
+    if (daysAhead === 0 && candidate <= bkkNow) {
+      // Same weekday but the time slot already passed today — next week
+      daysAhead = 7;
+    }
+    candidate.setUTCDate(candidate.getUTCDate() + daysAhead);
+  }
+
+  // Convert candidate back to real UTC epoch (subtract Bangkok offset)
+  const targetUtcMs   = candidate.getTime() - BANGKOK_OFFSET_MS;
+  const delayMs       = targetUtcMs - nowUtcMs;
+  const delayMinutes  = Math.max(1, Math.round(delayMs / 60000));
+  return delayMinutes;
+}
+
+/**
+ * Schedule (or re-schedule) the weekly rollup alarm.
+ * Fires every Monday at 09:00 Asia/Bangkok.
+ * Idempotent: clears any existing alarm before re-creating.
+ *
+ * Strategy: set delayInMinutes to next Monday 09:00 Bangkok, periodInMinutes
+ * to 1440 * 7 = 10080 (7 days).  The chrome.alarms API will then fire every
+ * 7 days from that first trigger — which keeps it locked to Mondays unless the
+ * service worker is reinstalled (in which case scheduleWeeklyRollupAlarm() is
+ * called again from initialize()).
+ *
+ * @returns {Promise<void>}
+ */
+async function scheduleWeeklyRollupAlarm() {
+  try {
+    await chrome.alarms.clear(ALARM_WEEKLY_ROLLUP);
+    // 1 = Monday in JS getDay() convention
+    const delayInMinutes = minutesUntilBangkokTime(ROLLUP_HOUR_BANGKOK, 1);
+    await chrome.alarms.create(ALARM_WEEKLY_ROLLUP, {
+      delayInMinutes,
+      periodInMinutes: 1440 * 7, // 7 days
+    });
+    log.info(`[LiveWatch] weeklyRollup alarm scheduled in ${delayInMinutes} minutes (next Monday 09:00 BKK)`);
+  } catch (e) {
+    log.error('[LiveWatch] scheduleWeeklyRollupAlarm error:', e);
+  }
+}
+
+/**
+ * Schedule (or re-schedule) the monthly rollup alarm.
+ * Fires on the 1st of each month at 09:00 Asia/Bangkok.
+ *
+ * Strategy: compute delay to the next 1st-of-month at 09:00 Bangkok,
+ * then use periodInMinutes: 1440 * 30 as an approximation (real month lengths
+ * vary; the alarm will re-schedule from initialize() on each service-worker
+ * restart, keeping it from drifting more than ~1 day over months).
+ *
+ * @returns {Promise<void>}
+ */
+async function scheduleMonthlyRollupAlarm() {
+  try {
+    await chrome.alarms.clear(ALARM_MONTHLY_ROLLUP);
+
+    const nowUtcMs  = Date.now();
+    const bkkNow    = new Date(nowUtcMs + BANGKOK_OFFSET_MS);
+
+    // Build candidate: 1st of current month at 09:00 Bangkok
+    const candidate = new Date(bkkNow);
+    candidate.setUTCDate(1);
+    candidate.setUTCHours(ROLLUP_HOUR_BANGKOK, 0, 0, 0);
+
+    // If already past, move to 1st of next month
+    if (candidate <= bkkNow) {
+      candidate.setUTCMonth(candidate.getUTCMonth() + 1);
+      candidate.setUTCDate(1);
+      candidate.setUTCHours(ROLLUP_HOUR_BANGKOK, 0, 0, 0);
+    }
+
+    const targetUtcMs    = candidate.getTime() - BANGKOK_OFFSET_MS;
+    const delayInMinutes = Math.max(1, Math.round((targetUtcMs - nowUtcMs) / 60000));
+
+    await chrome.alarms.create(ALARM_MONTHLY_ROLLUP, {
+      delayInMinutes,
+      periodInMinutes: 1440 * 30, // approx; re-anchored on each SW restart
+    });
+    log.info(`[LiveWatch] monthlyRollup alarm scheduled in ${delayInMinutes} minutes (next 1st-of-month 09:00 BKK)`);
+  } catch (e) {
+    log.error('[LiveWatch] scheduleMonthlyRollupAlarm error:', e);
+  }
+}
+
 /**
  * Append one GMV datapoint to the gmvTimeline ring buffer.
  * Picks the freshest source (workbenchStats preferred when both present).
@@ -1277,6 +1413,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       if (state.status === STATUS.MONITORING || state.status === STATUS.CAPTURING) {
         await tickGmvSnapshot();
       }
+    } else if (alarm.name === ALARM_WEEKLY_ROLLUP) {
+      await sendWeeklyRollupToLine();
+    } else if (alarm.name === ALARM_MONTHLY_ROLLUP) {
+      // Double-check: only send on the 1st of the month (alarm period is
+      // approximate; guard against off-by-one from periodInMinutes drift)
+      const bkkNow = new Date(Date.now() + BANGKOK_OFFSET_MS);
+      if (bkkNow.getUTCDate() === 1) {
+        await sendMonthlyRollupToLine();
+      } else {
+        // Off-schedule fire — re-anchor the alarm to the real next 1st
+        log.info('[LiveWatch] monthlyRollup fired off-day — re-scheduling');
+        await scheduleMonthlyRollupAlarm();
+      }
     }
   } catch (e) {
     log.error('[LiveWatch] alarms.onAlarm unhandled error:', alarm.name, e);
@@ -1564,6 +1713,11 @@ async function initialize() {
     // Schedule daily summary and hourly report
     await scheduleDailyAlarm();
     await scheduleHourlyAlarm();
+
+    // Schedule executive rollup alarms (Wave 2)
+    // These are re-anchored on every SW restart so they stay close to target time
+    await scheduleWeeklyRollupAlarm();
+    await scheduleMonthlyRollupAlarm();
 
     // Refresh user tier from SaaS backend every 6 hours
     const tierAlarm = await chrome.alarms.get(ALARM_REFRESH_TIER);

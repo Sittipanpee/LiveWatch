@@ -12,6 +12,14 @@
 import { supabaseUpdate } from './supabase.js';
 import { sendLineMessage } from './line.js';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Maximum number of execReports entries to keep (≈ 6 months at 1 session/day). */
+const EXEC_REPORTS_MAX = 180;
+
+/** Asia/Bangkok UTC offset in ms. */
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
 /**
@@ -165,6 +173,117 @@ function computeHistoricalAvgs(sessionHistory) {
     avg7d:  mean(sessions7d),
     avg30d: mean(sessions30d),
   };
+}
+
+/**
+ * Determine the hour bucket (0–3) for a Bangkok wall-clock time.
+ *   0 → 00:00–06:00
+ *   1 → 06:00–12:00
+ *   2 → 12:00–18:00
+ *   3 → 18:00–24:00
+ *
+ * @param {string|null} isoTs - ISO 8601 timestamp (or null)
+ * @returns {number|null}
+ */
+function hourBucketFromTs(isoTs) {
+  if (!isoTs) return null;
+  try {
+    const epochMs  = new Date(isoTs).getTime();
+    if (isNaN(epochMs)) return null;
+    // Shift to Bangkok wall-clock, then extract UTC hour as Bangkok hour
+    const bangkokDate = new Date(epochMs + BANGKOK_OFFSET_MS);
+    const h = bangkokDate.getUTCHours();
+    return Math.min(3, Math.floor(h / 6));
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Build a compact execReports record from a finalized session summary plus the
+ * current workbenchStats snapshot.
+ *
+ * @param {object} summary - Output of buildSessionSummary()
+ * @param {object} workbenchStats - Raw workbench payload (may be null/undefined)
+ * @returns {object} compact record
+ */
+function buildExecRecord(summary, workbenchStats) {
+  const products  = Array.isArray(workbenchStats?.products) ? workbenchStats.products : [];
+  const traffic   = Array.isArray(workbenchStats?.trafficSources) ? workbenchStats.trafficSources : [];
+
+  // Top 5 SKUs by GMV (satang)
+  const topSkus = [...products]
+    .filter((p) => p.gmv != null)
+    .sort((a, b) => b.gmv - a.gmv)
+    .slice(0, 5)
+    .map((p) => ({
+      name:  p.name   ?? '',
+      gmv:   p.gmv    != null ? Math.round(p.gmv * 100) : null,
+      units: p.units  ?? 0,
+    }));
+
+  // Bottom 3 SKUs by GMV (satang) with impression / cartAdd data if available
+  const bottomSkus = [...products]
+    .filter((p) => p.gmv != null)
+    .sort((a, b) => a.gmv - b.gmv)
+    .slice(0, 3)
+    .map((p) => ({
+      name:        p.name         ?? '',
+      impressions: p.impressions  ?? null,
+      gmv:         p.gmv != null  ? Math.round(p.gmv * 100) : null,
+      cartAdds:    p.cartAdds     ?? null,
+    }));
+
+  // Traffic mix — up to 11 channels
+  const trafficMix = traffic
+    .slice(0, 11)
+    .map((t) => ({ channel: t.channel ?? t.name ?? '', pct: t.gmvPct ?? t.pct ?? null }));
+
+  // Date label "YYYY-MM-DD" in Bangkok timezone
+  let dateLabel = null;
+  try {
+    if (summary.sessionStartedAt) {
+      const bangkokDate = new Date(new Date(summary.sessionStartedAt).getTime() + BANGKOK_OFFSET_MS);
+      const y  = bangkokDate.getUTCFullYear();
+      const mo = String(bangkokDate.getUTCMonth() + 1).padStart(2, '0');
+      const d  = String(bangkokDate.getUTCDate()).padStart(2, '0');
+      dateLabel = `${y}-${mo}-${d}`;
+    }
+  } catch (_) { /* leave null */ }
+
+  return {
+    sessionId:            summary.sessionId,
+    date:                 dateLabel,
+    startTs:              summary.sessionStartedAt ? new Date(summary.sessionStartedAt).getTime() : null,
+    endTs:                Date.now(),
+    durationMin:          summary.durationMins ?? 0,
+    gmv:                  summary.final_gmv_satang,
+    units:                summary.final_units_sold,
+    viewers:              summary.peak_viewers,
+    impressions:          workbenchStats?.impressions ?? null,
+    adSpend:              workbenchStats?.adSpend    ?? null,
+    topSkus,
+    bottomSkus,
+    trafficMix,
+    quietMinutes:         summary.quietMinutes         ?? 0,
+    presenterAbsentCount: summary.presenterAbsentCount ?? 0,
+    avgSentiment:         summary.avg_smile_score,
+    productCount:         products.length > 0 ? products.length : null,
+    hourBucket:           hourBucketFromTs(summary.sessionStartedAt),
+  };
+}
+
+/**
+ * Append a compact execReports record to chrome.storage.local.execReports.
+ * Caps the array at EXEC_REPORTS_MAX (180) by dropping the oldest entries.
+ *
+ * @param {object} record - Output of buildExecRecord()
+ * @returns {Promise<void>}
+ */
+async function appendExecReport(record) {
+  const { execReports = [] } = await chrome.storage.local.get('execReports');
+  const updated = [...execReports, record].slice(-EXEC_REPORTS_MAX);
+  await chrome.storage.local.set({ execReports: updated });
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -521,6 +640,16 @@ export async function finalizeSession(sessionId, config) {
       await chrome.storage.local.set({ sessionHistory: updatedHistory });
     } catch (histErr) {
       console.warn('[LiveWatch] finalizeSession: sessionHistory append failed:', histErr);
+    }
+
+    // 6c. Append compact record to execReports aggregate (Wave 2, cap 180)
+    //     Read fresh workbenchStats here so the record has the final snapshot.
+    try {
+      const { workbenchStats = null } = await chrome.storage.local.get('workbenchStats');
+      const execRecord = buildExecRecord(summary, workbenchStats);
+      await appendExecReport(execRecord);
+    } catch (execErr) {
+      console.warn('[LiveWatch] finalizeSession: execReports append failed:', execErr);
     }
 
     // 7. Clear the endingSession flag

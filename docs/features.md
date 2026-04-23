@@ -48,6 +48,25 @@
 - [x] สรุป AI analysis ทั้งหมด (phone alerts, smile avg, chat sentiment) จาก `statsBuffer` + `recentCaptures`
 - [x] ส่ง LINE summary report ตอนจบไลฟ์
 
+## Wave 2 — Executive Rollup Reports
+- [x] `weeklyRollup` alarm — fires every Monday 09:00 Asia/Bangkok (idempotent, re-anchored on SW restart)
+- [x] `monthlyRollup` alarm — fires on 1st of month 09:00 Asia/Bangkok (approximate period, re-anchored)
+- [x] `src/reports/weekly_rollup.js` — `buildWeeklyRollup()` + `sendWeeklyRollupToLine()`:
+  - 7-day window from `execReports` (with graceful "no data" fallback)
+  - สรุปสัปดาห์: GMV รวม, ยอดขาย, จำนวนไลฟ์, ชั่วโมงรวม
+  - Top 3 sessions by GMV, Top 5 SKUs (aggregated), Top 3 traffic channels (avg %)
+  - Trend vs previous 7 days: GMV ±%, sessions ±%, avg GMV/session ±%
+  - Best time-of-day slot (4 buckets: 00-06, 06-12, 12-18, 18-24)
+- [x] `src/reports/monthly_rollup.js` — `buildMonthlyRollup()` + `sendMonthlyRollupToLine()`:
+  - 30-day window from `execReports` (with graceful "no data" fallback)
+  - Top 10 SKUs (aggregated GMV), per-weekday avg GMV table
+- [x] `execReports` storage key — compact per-session records appended in `finalizeSession()`:
+  - sessionId, date, startTs, endTs, durationMin, gmv, units, viewers, impressions, adSpend
+  - topSkus (top 5), bottomSkus (bottom 3), trafficMix (up to 11), quietMinutes, presenterAbsentCount, avgSentiment, productCount, hourBucket (0–3)
+  - Cap enforced at 180 entries (≈ 6 months)
+- [x] `minutesUntilBangkokTime()` — timezone-correct Bangkok delay calculator (UTC+7 explicit, no system TZ)
+- [x] Monthly rollup guard: re-anchors alarm if off-day fire detected
+
 ## Wave 1 — Executive / Management Reporting
 - [x] `WORKBENCH_STATS_UPDATE` + `WORKBENCH_HEARTBEAT` handlers ใน background.js — merge payload เข้า `workbenchStats`, อัป `lastWorkbenchHeartbeat`
 - [x] `content_workbench.js` registered ใน manifest.json สำหรับ `shop.tiktok.com/workbench/live/*`
