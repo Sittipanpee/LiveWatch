@@ -44,11 +44,15 @@ const TIKTOK_LIVE_PATTERN = /shop\.tiktok\.com\/streamer\/live/;
 const CAPTURE_INTERVAL_MINUTES = 8;
 const FRAMES_PER_BURST = 3;
 const FRAME_GAP_MS = 5000;
-const ALARM_CAPTURE = 'captureBurst';
-const ALARM_DAILY   = 'dailySummary';
-const ALARM_HOURLY  = 'hourlySummary';
-const ALARM_SCAN    = 'scanTabs';
+const ALARM_CAPTURE      = 'captureBurst';
+const ALARM_DAILY        = 'dailySummary';
+const ALARM_HOURLY       = 'hourlySummary';
+const ALARM_SCAN         = 'scanTabs';
 const ALARM_REFRESH_TIER = 'refreshTier';
+const ALARM_GMV_SNAPSHOT = 'gmvSnapshot';
+
+// GMV timeline ring-buffer cap: 720 entries = 12 hours at 1-min intervals
+const GMV_TIMELINE_MAX = 720;
 const DAILY_SUMMARY_HOUR   = 23;
 const HOURLY_REPORT_PERIOD = 60;    // minutes
 const MAX_RECENT_CAPTURES  = 20;    // keep last 20 in storage
@@ -749,6 +753,79 @@ async function clearCaptureAlarm() {
   }
 }
 
+async function startGmvSnapshotAlarm() {
+  try {
+    await chrome.alarms.clear(ALARM_GMV_SNAPSHOT);
+    await chrome.alarms.create(ALARM_GMV_SNAPSHOT, {
+      delayInMinutes: 1,
+      periodInMinutes: 1,
+    });
+    log.info('[LiveWatch] gmvSnapshot alarm scheduled (every 1 min)');
+  } catch (e) {
+    log.error('[LiveWatch] startGmvSnapshotAlarm error:', e);
+  }
+}
+
+async function clearGmvSnapshotAlarm() {
+  try {
+    await chrome.alarms.clear(ALARM_GMV_SNAPSHOT);
+  } catch (e) {
+    log.error('[LiveWatch] clearGmvSnapshotAlarm error:', e);
+  }
+}
+
+/**
+ * Append one GMV datapoint to the gmvTimeline ring buffer.
+ * Picks the freshest source (workbenchStats preferred when both present).
+ */
+async function tickGmvSnapshot() {
+  try {
+    const { lastStats, workbenchStats, gmvTimeline = [] } =
+      await chrome.storage.local.get(['lastStats', 'workbenchStats', 'gmvTimeline']);
+
+    // Prefer workbench if it has a scrapedAt timestamp, otherwise fall back to lastStats
+    const useWorkbench = workbenchStats && workbenchStats.scrapedAt &&
+      (!lastStats || !lastStats.polledAt ||
+        new Date(workbenchStats.scrapedAt) >= new Date(lastStats.polledAt));
+
+    let gmv = null;
+    let units = null;
+    let viewers = null;
+    let impressions = null;
+    let gmvPerHour = null;
+
+    if (useWorkbench) {
+      gmv         = workbenchStats.gmv?.value ?? null;
+      units       = workbenchStats.unitsSold ?? null;
+      viewers     = workbenchStats.viewers ?? null;
+      impressions = workbenchStats.impressions ?? null;
+      gmvPerHour  = workbenchStats.gmvPerHour ?? null;
+    } else if (lastStats) {
+      // lastStats.gmv is a Thai baht string like "฿1,234.56" — store raw string
+      gmv         = lastStats.gmv ?? null;
+      units       = lastStats.units_sold ?? null;
+      viewers     = lastStats.viewer_count ?? null;
+      impressions = null;
+      gmvPerHour  = null;
+    }
+
+    const entry = {
+      ts: new Date().toISOString(),
+      gmv,
+      units,
+      viewers,
+      impressions,
+      gmvPerHour,
+    };
+
+    const updated = [...gmvTimeline, entry].slice(-GMV_TIMELINE_MAX);
+    await chrome.storage.local.set({ gmvTimeline: updated });
+    log.info('[LiveWatch][gmvSnapshot] tick recorded, timeline length:', updated.length);
+  } catch (e) {
+    log.error('[LiveWatch] tickGmvSnapshot error:', e);
+  }
+}
+
 // ─── Session management ───────────────────────────────────────────────────────
 
 async function startSession(tabId) {
@@ -882,6 +959,10 @@ async function setLiveTab(tabId) {
     await startCaptureAlarm();
     await scheduleStatsAlarm();
     await scheduleChatBatchAlarm();
+    await startGmvSnapshotAlarm();
+
+    // Reset GMV timeline for the new session
+    await chrome.storage.local.set({ gmvTimeline: [] });
 
     log.info('[LiveWatch] Now monitoring tab', tabId, 'session', sessionId);
   } catch (e) {
@@ -898,6 +979,7 @@ async function goOffline() {
     await clearCaptureAlarm();
     await clearStatsAlarm();
     await clearChatBatchAlarm();
+    await clearGmvSnapshotAlarm();
 
     if (state.sessionId) {
       await endSession(state.sessionId);
@@ -1190,6 +1272,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await flushChatBuffer(state.sessionId);
         await runChatSentimentBatch(state.sessionId, {});
       }
+    } else if (alarm.name === ALARM_GMV_SNAPSHOT) {
+      // Only snapshot while a live session is active
+      if (state.status === STATUS.MONITORING || state.status === STATUS.CAPTURING) {
+        await tickGmvSnapshot();
+      }
     }
   } catch (e) {
     log.error('[LiveWatch] alarms.onAlarm unhandled error:', alarm.name, e);
@@ -1310,6 +1397,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg.type === 'WS_MSG') {
       // Log raw WS frames for future protobuf decoding — acknowledge only for now.
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (msg.type === 'WORKBENCH_STATS_UPDATE') {
+      // Merge incoming workbench payload into chrome.storage.local.workbenchStats
+      const incoming = msg.stats ?? {};
+      (async () => {
+        try {
+          const { workbenchStats = {} } = await chrome.storage.local.get('workbenchStats');
+          const merged = { ...workbenchStats, ...incoming, lastWorkbenchHeartbeat: Date.now() };
+          await chrome.storage.local.set({ workbenchStats: merged });
+          log.info('[LiveWatch][workbench] WORKBENCH_STATS_UPDATE received, scrapedAt:', incoming.scrapedAt);
+        } catch (e) {
+          log.error('[LiveWatch] WORKBENCH_STATS_UPDATE storage error:', e);
+        }
+      })();
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (msg.type === 'WORKBENCH_HEARTBEAT') {
+      (async () => {
+        try {
+          const { workbenchStats = {} } = await chrome.storage.local.get('workbenchStats');
+          await chrome.storage.local.set({
+            workbenchStats: { ...workbenchStats, lastWorkbenchHeartbeat: Date.now() },
+          });
+          log.info('[LiveWatch][workbench] WORKBENCH_HEARTBEAT received, roomId:', msg.roomId);
+        } catch (e) {
+          log.error('[LiveWatch] WORKBENCH_HEARTBEAT storage error:', e);
+        }
+      })();
       sendResponse({ ok: true });
       return false;
     }

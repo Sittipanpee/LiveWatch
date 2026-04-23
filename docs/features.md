@@ -48,6 +48,23 @@
 - [x] สรุป AI analysis ทั้งหมด (phone alerts, smile avg, chat sentiment) จาก `statsBuffer` + `recentCaptures`
 - [x] ส่ง LINE summary report ตอนจบไลฟ์
 
+## Wave 1 — Executive / Management Reporting
+- [x] `WORKBENCH_STATS_UPDATE` + `WORKBENCH_HEARTBEAT` handlers ใน background.js — merge payload เข้า `workbenchStats`, อัป `lastWorkbenchHeartbeat`
+- [x] `content_workbench.js` registered ใน manifest.json สำหรับ `shop.tiktok.com/workbench/live/*`
+- [x] `gmvSnapshot` alarm ทุก 1 นาที (active เฉพาะ MONITORING/CAPTURING) — ring buffer 720 entries (12 ชั่วโมง) ใน `gmvTimeline`
+- [x] Reset `gmvTimeline` เมื่อ LIVE_STARTED ใหม่
+- [x] Clear `gmvSnapshot` alarm เมื่อ `goOffline()`
+- [x] `buildSessionSummary()` enriched:
+  - Top 3 / Bottom 3 SKUs จาก `workbenchStats.products` (by GMV)
+  - Traffic mix: top 3 channels (name + GMV%)
+  - จุดเงียบ: นับ quiet minutes จาก `gmvTimeline` (5-min zero-delta window)
+  - ช่วงไม่มีพิธีกร: count จาก `recentCaptures` ที่ `presenter_visible === false`
+  - มูลค่าเฉลี่ยต่อออเดอร์ (avg order value)
+  - เทียบ 7d/30d avg GMV จาก `sessionHistory`
+- [x] `finalizeSession()` append session entry ไปยัง `sessionHistory` (cap 60) ก่อนส่ง summary
+- [x] LINE executive summary section (Thai): ยอดรวม, Top/Bottom SKUs, traffic mix, จุดเงียบ, ช่วงไม่มีพิธีกร, เทียบค่าเฉลี่ย
+- [x] Backward compat — ทุก executive section skip gracefully เมื่อ `workbenchStats` ว่าง
+
 ## Phase 5 — Web Dashboard (SaaS)
 - [x] Next.js 15 + Tailwind v4 + Supabase Auth
 - [x] Landing page + Privacy + Terms

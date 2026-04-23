@@ -43,6 +43,15 @@
         "src/content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://shop.tiktok.com/workbench/live/*"
+      ],
+      "js": [
+        "src/content_workbench.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "action": {

@@ -97,6 +97,76 @@ function formatThaiDateTime(date = new Date()) {
   return `${day} ${month} ${hh}:${mm}`;
 }
 
+// ─── Executive reporting helpers ─────────────────────────────────────────────
+
+/**
+ * Compute the number of "quiet minutes" in gmvTimeline —
+ * contiguous 5-minute windows where GMV delta is zero.
+ *
+ * @param {Array<{ts: string, gmv: number|string|null}>} gmvTimeline
+ * @returns {number} count of quiet minutes
+ */
+function countQuietMinutes(gmvTimeline) {
+  if (!Array.isArray(gmvTimeline) || gmvTimeline.length < 2) return 0;
+
+  // Normalise GMV to numeric values (strip ฿ and commas for string entries)
+  const pts = gmvTimeline.map((e) => {
+    if (e.gmv == null) return null;
+    if (typeof e.gmv === 'number') return e.gmv;
+    const cleaned = String(e.gmv).replace(/[฿,\s]/g, '');
+    const n = parseFloat(cleaned);
+    return Number.isNaN(n) ? null : n;
+  });
+
+  let quietCount = 0;
+  // Slide a 5-entry window; if all consecutive deltas are 0 → quiet window
+  for (let i = 4; i < pts.length; i++) {
+    const window = pts.slice(i - 4, i + 1);
+    const valid = window.filter((v) => v != null);
+    if (valid.length < 2) continue;
+    const allZeroDelta = valid.every((v, idx) => idx === 0 || v === valid[idx - 1]);
+    if (allZeroDelta) quietCount++;
+  }
+  return quietCount;
+}
+
+/**
+ * Compute 7-day and 30-day average GMV from sessionHistory.
+ * Only finalized sessions (with final_gmv_satang) are included.
+ *
+ * @param {Array<object>} sessionHistory
+ * @returns {{ avg7d: number|null, avg30d: number|null }}
+ */
+function computeHistoricalAvgs(sessionHistory) {
+  if (!Array.isArray(sessionHistory) || sessionHistory.length === 0) {
+    return { avg7d: null, avg30d: null };
+  }
+
+  const now = Date.now();
+  const ms7d  = 7 * 24 * 60 * 60 * 1000;
+  const ms30d = 30 * 24 * 60 * 60 * 1000;
+
+  const sessions7d  = sessionHistory.filter((s) => {
+    const t = s.finalizedAt ? new Date(s.finalizedAt).getTime() : 0;
+    return s.final_gmv_satang != null && (now - t) <= ms7d;
+  });
+  const sessions30d = sessionHistory.filter((s) => {
+    const t = s.finalizedAt ? new Date(s.finalizedAt).getTime() : 0;
+    return s.final_gmv_satang != null && (now - t) <= ms30d;
+  });
+
+  const mean = (arr) => {
+    if (arr.length === 0) return null;
+    const sum = arr.reduce((acc, s) => acc + s.final_gmv_satang, 0);
+    return Math.round(sum / arr.length);
+  };
+
+  return {
+    avg7d:  mean(sessions7d),
+    avg30d: mean(sessions30d),
+  };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -162,7 +232,42 @@ export async function buildSessionSummary(sessionId, config) {
   const phone_incidents = logs.filter((l) => l.phone_detected === true).length;
   const total_bursts = logs.length;
 
-  // 6. Return summary object
+  // 6. Read workbench data (executive reporting)
+  const { workbenchStats = null, gmvTimeline = [], sessionHistory = [] } =
+    await chrome.storage.local.get(['workbenchStats', 'gmvTimeline', 'sessionHistory']);
+
+  // Top / bottom SKUs by GMV (from workbenchStats.products)
+  const products = Array.isArray(workbenchStats?.products) ? workbenchStats.products : [];
+  const sortedByGmv = [...products]
+    .filter((p) => p.gmv != null)
+    .sort((a, b) => b.gmv - a.gmv);
+  const top3skus    = sortedByGmv.slice(0, 3);
+  const bottom3skus = sortedByGmv.slice(-3).reverse();
+
+  // Traffic mix — top 3 channels by GMV%
+  const trafficSources = Array.isArray(workbenchStats?.trafficSources)
+    ? workbenchStats.trafficSources
+    : [];
+  const top3traffic = [...trafficSources]
+    .filter((t) => t.gmvPct != null)
+    .sort((a, b) => b.gmvPct - a.gmvPct)
+    .slice(0, 3);
+
+  // Quiet minutes (5-min zero-GMV windows)
+  const quietMinutes = countQuietMinutes(gmvTimeline);
+
+  // Presenter-absent count from recentCaptures
+  const presenterAbsentCount = logs.filter((l) => l.presenter_visible === false).length;
+
+  // Historical averages
+  const { avg7d, avg30d } = computeHistoricalAvgs(sessionHistory);
+
+  // Average order value (satang) — GMV / units
+  const avg_order_value_satang = (final_gmv_satang != null && final_units_sold != null && final_units_sold > 0)
+    ? Math.round(final_gmv_satang / final_units_sold)
+    : null;
+
+  // 7. Return enriched summary object
   return {
     sessionId,
     sessionStartedAt,
@@ -170,12 +275,21 @@ export async function buildSessionSummary(sessionId, config) {
     peak_viewers,
     final_gmv_satang,
     final_units_sold,
+    avg_order_value_satang,
     avg_smile_score,
     avg_eye_contact,
     alert_count,
     phone_incidents,
     total_bursts,
     chatSentiment,
+    // Executive data
+    top3skus,
+    bottom3skus,
+    top3traffic,
+    quietMinutes,
+    presenterAbsentCount,
+    avg7d,
+    avg30d,
   };
 }
 
@@ -236,6 +350,80 @@ export async function sendSessionSummaryToLine(summary, config) {
       }
       if (summary.chatSentiment.suggested_action) {
         lines.push(`  แนะนำ: ${summary.chatSentiment.suggested_action}`);
+      }
+    }
+
+    // ── Executive sections (skipped gracefully when workbench data absent) ─────
+
+    // Average order value
+    if (summary.avg_order_value_satang != null) {
+      lines.push(``);
+      lines.push(`📊 ยอดรวม:`);
+      lines.push(`  มูลค่าเฉลี่ยต่อออเดอร์: ${formatGmv(summary.avg_order_value_satang)}`);
+      if (summary.peak_viewers != null) {
+        lines.push(`  ผู้ชมสูงสุด: ${summary.peak_viewers.toLocaleString()} คน`);
+      }
+    }
+
+    // Top 3 SKUs
+    if (Array.isArray(summary.top3skus) && summary.top3skus.length > 0) {
+      lines.push(``);
+      lines.push(`📈 Top 3 สินค้า (GMV):`);
+      summary.top3skus.forEach((p, i) => {
+        const name = p.name ? p.name.slice(0, 30) : `สินค้า #${i + 1}`;
+        const gmvStr = p.gmv != null ? formatGmv(Math.round(p.gmv * 100)) : 'ไม่มีข้อมูล';
+        lines.push(`  ${i + 1}. ${name} — ${gmvStr}`);
+      });
+    }
+
+    // Bottom 3 SKUs (only if we have more than 3 products total and bottom differs from top)
+    if (Array.isArray(summary.bottom3skus) && summary.bottom3skus.length > 0 &&
+        JSON.stringify(summary.bottom3skus) !== JSON.stringify(summary.top3skus)) {
+      lines.push(``);
+      lines.push(`📉 Bottom 3 สินค้า (GMV):`);
+      summary.bottom3skus.forEach((p, i) => {
+        const name = p.name ? p.name.slice(0, 30) : `สินค้า #${i + 1}`;
+        const gmvStr = p.gmv != null ? formatGmv(Math.round(p.gmv * 100)) : 'ไม่มีข้อมูล';
+        lines.push(`  ${i + 1}. ${name} — ${gmvStr}`);
+      });
+    }
+
+    // Traffic mix
+    if (Array.isArray(summary.top3traffic) && summary.top3traffic.length > 0) {
+      lines.push(``);
+      lines.push(`🚦 แหล่งที่มาของยอดขาย (Top 3):`);
+      summary.top3traffic.forEach((t, i) => {
+        const channel = t.channel ?? `ช่องทาง #${i + 1}`;
+        const pct = t.gmvPct != null ? `${t.gmvPct.toFixed(1)}%` : '-';
+        lines.push(`  ${i + 1}. ${channel} — ${pct}`);
+      });
+    }
+
+    // Quiet minutes
+    if (summary.quietMinutes != null && summary.quietMinutes > 0) {
+      lines.push(``);
+      lines.push(`📉 จุดเงียบ: ${summary.quietMinutes} นาที ที่ GMV ไม่เปลี่ยนแปลง`);
+    }
+
+    // Presenter absent count
+    if (summary.presenterAbsentCount != null && summary.presenterAbsentCount > 0) {
+      lines.push(`🧑 ช่วงไม่มีพิธีกร: ${summary.presenterAbsentCount} รอบ`);
+    }
+
+    // Historical comparison
+    const hasHistory = summary.avg7d != null || summary.avg30d != null;
+    if (hasHistory && summary.final_gmv_satang != null) {
+      lines.push(``);
+      lines.push(`📊 เทียบค่าเฉลี่ย:`);
+      if (summary.avg7d != null) {
+        const diff7d = summary.final_gmv_satang - summary.avg7d;
+        const sign7d = diff7d >= 0 ? '+' : '';
+        lines.push(`  vs 7 วัน: ${sign7d}${formatGmv(diff7d)} (เฉลี่ย ${formatGmv(summary.avg7d)})`);
+      }
+      if (summary.avg30d != null) {
+        const diff30d = summary.final_gmv_satang - summary.avg30d;
+        const sign30d = diff30d >= 0 ? '+' : '';
+        lines.push(`  vs 30 วัน: ${sign30d}${formatGmv(diff30d)} (เฉลี่ย ${formatGmv(summary.avg30d)})`);
       }
     }
 
@@ -316,6 +504,24 @@ export async function finalizeSession(sessionId, config) {
 
     // 6. Save summary to chrome.storage.local
     await chrome.storage.local.set({ sessionSummary: summary });
+
+    // 6b. Append to sessionHistory ring buffer (max 60 finalized sessions)
+    //     Used by buildSessionSummary() to compute 7d/30d GMV averages.
+    try {
+      const { sessionHistory = [] } = await chrome.storage.local.get('sessionHistory');
+      const historyEntry = {
+        sessionId:         summary.sessionId,
+        finalizedAt:       new Date().toISOString(),
+        durationMins:      summary.durationMins,
+        final_gmv_satang:  summary.final_gmv_satang,
+        final_units_sold:  summary.final_units_sold,
+        peak_viewers:      summary.peak_viewers,
+      };
+      const updatedHistory = [...sessionHistory, historyEntry].slice(-60);
+      await chrome.storage.local.set({ sessionHistory: updatedHistory });
+    } catch (histErr) {
+      console.warn('[LiveWatch] finalizeSession: sessionHistory append failed:', histErr);
+    }
 
     // 7. Clear the endingSession flag
     await chrome.storage.local.remove('endingSession');
