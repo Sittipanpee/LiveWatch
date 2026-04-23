@@ -48,6 +48,19 @@
 - [x] สรุป AI analysis ทั้งหมด (phone alerts, smile avg, chat sentiment) จาก `statsBuffer` + `recentCaptures`
 - [x] ส่ง LINE summary report ตอนจบไลฟ์
 
+## Wave 3 — CMO Red-flags Report
+- [x] `cmoRedFlags` alarm — fires every Monday 10:00 Asia/Bangkok (1 h after weeklyRollup, same Monday-DOW guard + re-anchor on drift)
+- [x] `src/reports/cmo_redflags.js` — `buildCmoRedFlags()` + `sendCmoRedFlagsToLine()`:
+  - Reads `execReports` from `chrome.storage.local`; graceful "no data" fallback (< 7 days)
+  - **🔴 Flag 1** — High-impression / no-sale SKUs: aggregates `bottomSkus`, flags where impressions ≥ 5000 AND GMV = 0; top 5 offenders
+  - **🔴 Flag 2** — Missed golden time slots: derives best hourBucket from last 30 days (min 2 sessions guard), lists days in last 7 with no live in that bucket
+  - **🔴 Flag 3** — ROAS decline: this-week avg vs prev-4-weeks avg; skipped gracefully if all `adSpend = null`; requires ≥ 5 sessions total; flags if drop ≥ 25%
+  - **🟡 Flag 4** — Presenter absence spikes: sessions where `presenterAbsentCount ≥ 3`
+  - **🟡 Flag 5** — Quiet-minute spikes: sessions where `quietMinutes ≥ 10`
+  - **🟢 Positive signals** — Best session by GMV; most improved SKU (vs previous 7 days, new SKUs labeled "ใหม่สัปดาห์นี้")
+  - SKU deduplication normalized (lowercase + trim) to avoid double-counting
+  - No-flag case sends green-only message
+
 ## Wave 2 — Executive Rollup Reports
 - [x] `weeklyRollup` alarm — fires every Monday 09:00 Asia/Bangkok (idempotent, re-anchored on SW restart)
 - [x] `monthlyRollup` alarm — fires on 1st of month 09:00 Asia/Bangkok (approximate period, re-anchored)

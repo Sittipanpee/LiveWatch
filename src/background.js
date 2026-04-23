@@ -24,6 +24,7 @@ import { analyzeFrames } from './ai.js';
 import { scheduleAnalyticsScrape } from './analytics.js';
 import { sendWeeklyRollupToLine } from './reports/weekly_rollup.js';
 import { sendMonthlyRollupToLine } from './reports/monthly_rollup.js';
+import { sendCmoRedFlagsToLine } from './reports/cmo_redflags.js';
 
 // ─── Logger (debug logs suppressed in production) ────────────────────────────
 
@@ -54,12 +55,16 @@ const ALARM_REFRESH_TIER   = 'refreshTier';
 const ALARM_GMV_SNAPSHOT   = 'gmvSnapshot';
 const ALARM_WEEKLY_ROLLUP  = 'weeklyRollup';
 const ALARM_MONTHLY_ROLLUP = 'monthlyRollup';
+const ALARM_CMO_REDFLAGS   = 'cmoRedFlags';
 
 // Asia/Bangkok UTC offset in ms (UTC+7)
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 // Rollup fire time — 09:00 Bangkok
 const ROLLUP_HOUR_BANGKOK = 9;
+
+// CMO Red-flags fire time — 10:00 Bangkok (1 h after weeklyRollup, Mondays)
+const CMO_REDFLAGS_HOUR_BANGKOK = 10;
 
 // GMV timeline ring-buffer cap: 720 entries = 12 hours at 1-min intervals
 const GMV_TIMELINE_MAX = 720;
@@ -911,6 +916,32 @@ async function scheduleMonthlyRollupAlarm() {
 }
 
 /**
+ * Schedule (or re-schedule) the CMO Red-flags alarm.
+ * Fires every Monday at 10:00 Asia/Bangkok — 1 hour after weeklyRollup —
+ * so CMO sees both reports on Monday morning.
+ *
+ * Strategy: same as scheduleWeeklyRollupAlarm() but targeting hour 10.
+ * periodInMinutes: 1440 * 7 (7 days) keeps it weekly until the SW restarts
+ * and re-anchors.
+ *
+ * @returns {Promise<void>}
+ */
+async function scheduleCmoRedFlagsAlarm() {
+  try {
+    await chrome.alarms.clear(ALARM_CMO_REDFLAGS);
+    // 1 = Monday in JS getDay() convention
+    const delayInMinutes = minutesUntilBangkokTime(CMO_REDFLAGS_HOUR_BANGKOK, 1);
+    await chrome.alarms.create(ALARM_CMO_REDFLAGS, {
+      delayInMinutes,
+      periodInMinutes: 1440 * 7, // 7 days
+    });
+    log.info(`[LiveWatch] cmoRedFlags alarm scheduled in ${delayInMinutes} minutes (next Monday 10:00 BKK)`);
+  } catch (e) {
+    log.error('[LiveWatch] scheduleCmoRedFlagsAlarm error:', e);
+  }
+}
+
+/**
  * Append one GMV datapoint to the gmvTimeline ring buffer.
  * Picks the freshest source (workbenchStats preferred when both present).
  */
@@ -1415,6 +1446,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
     } else if (alarm.name === ALARM_WEEKLY_ROLLUP) {
       await sendWeeklyRollupToLine();
+    } else if (alarm.name === ALARM_CMO_REDFLAGS) {
+      // Guard: only send on Monday (Bangkok); re-anchor if alarm drifted
+      const bkkNow = new Date(Date.now() + BANGKOK_OFFSET_MS);
+      if (bkkNow.getUTCDay() === 1) {
+        await sendCmoRedFlagsToLine();
+      } else {
+        log.info('[LiveWatch] cmoRedFlags fired off-day — re-scheduling');
+        await scheduleCmoRedFlagsAlarm();
+      }
     } else if (alarm.name === ALARM_MONTHLY_ROLLUP) {
       // Double-check: only send on the 1st of the month (alarm period is
       // approximate; guard against off-by-one from periodInMinutes drift)
@@ -1714,10 +1754,11 @@ async function initialize() {
     await scheduleDailyAlarm();
     await scheduleHourlyAlarm();
 
-    // Schedule executive rollup alarms (Wave 2)
+    // Schedule executive rollup alarms (Wave 2 + Wave 3)
     // These are re-anchored on every SW restart so they stay close to target time
     await scheduleWeeklyRollupAlarm();
     await scheduleMonthlyRollupAlarm();
+    await scheduleCmoRedFlagsAlarm();
 
     // Refresh user tier from SaaS backend every 6 hours
     const tierAlarm = await chrome.alarms.get(ALARM_REFRESH_TIER);
